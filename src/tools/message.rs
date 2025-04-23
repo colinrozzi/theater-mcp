@@ -118,11 +118,18 @@ impl MessageTools {
         let tools_self = self.clone();
         tool_manager.register_tool(send_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            let fut = tools_self.send_message(args);
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            handle.block_on(fut)
+            // Create a one-shot channel for communicating the result
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            
+            // Spawn a task to execute the async function
+            tokio::spawn(async move {
+                let result = tools_self.send_message(args).await;
+                let _ = tx.send(result); // Send the result through the channel
+            });
+            
+            // Wait for the result synchronously, but without blocking the runtime
+            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
         });
         
         // Register request_message tool
@@ -149,11 +156,18 @@ impl MessageTools {
         let tools_self = self.clone();
         tool_manager.register_tool(request_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            let fut = tools_self.request_message(args);
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            handle.block_on(fut)
+            // Create a one-shot channel for communicating the result
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            
+            // Spawn a task to execute the async function
+            tokio::spawn(async move {
+                let result = tools_self.request_message(args).await;
+                let _ = tx.send(result); // Send the result through the channel
+            });
+            
+            // Wait for the result synchronously, but without blocking the runtime
+            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
         });
     }
 }

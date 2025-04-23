@@ -135,11 +135,18 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(start_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            let fut = tools_self.start_actor(args);
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            handle.block_on(fut)
+            // Create a one-shot channel for communicating the result
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            
+            // Spawn a task to execute the async function
+            tokio::spawn(async move {
+                let result = tools_self.start_actor(args).await;
+                let _ = tx.send(result); // Send the result through the channel
+            });
+            
+            // Wait for the result synchronously, but without blocking the runtime
+            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
         });
         
         // Register stop_actor tool
@@ -162,11 +169,18 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(stop_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            let fut = tools_self.stop_actor(args);
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            handle.block_on(fut)
+            // Create a one-shot channel for communicating the result
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            
+            // Spawn a task to execute the async function
+            tokio::spawn(async move {
+                let result = tools_self.stop_actor(args).await;
+                let _ = tx.send(result); // Send the result through the channel
+            });
+            
+            // Wait for the result synchronously, but without blocking the runtime
+            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
         });
         
         // Register restart_actor tool
@@ -189,11 +203,18 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(restart_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            let fut = tools_self.restart_actor(args);
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            handle.block_on(fut)
+            // Create a one-shot channel for communicating the result
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            
+            // Spawn a task to execute the async function
+            tokio::spawn(async move {
+                let result = tools_self.restart_actor(args).await;
+                let _ = tx.send(result); // Send the result through the channel
+            });
+            
+            // Wait for the result synchronously, but without blocking the runtime
+            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
         });
     }
 }
