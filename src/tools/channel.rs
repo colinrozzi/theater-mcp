@@ -3,6 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tokio::runtime::Runtime;
 use tracing::debug;
 
 use crate::theater::client::TheaterClient;
@@ -151,18 +152,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(open_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            
-            // Create a one-shot channel for communicating the result
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            
-            // Spawn a task to execute the async function
-            tokio::spawn(async move {
-                let result = tools_self.open_channel(args).await;
-                let _ = tx.send(result); // Send the result through the channel
-            });
-            
-            // Wait for the result synchronously, but without blocking the runtime
-            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
+            // Create a runtime for this request
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                tools_self.open_channel(args).await
+            })
         });
         
         // Register send_on_channel tool
@@ -189,18 +183,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(send_on_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            
-            // Create a one-shot channel for communicating the result
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            
-            // Spawn a task to execute the async function
-            tokio::spawn(async move {
-                let result = tools_self.send_on_channel(args).await;
-                let _ = tx.send(result); // Send the result through the channel
-            });
-            
-            // Wait for the result synchronously, but without blocking the runtime
-            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
+            // Create a runtime for this request
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                tools_self.send_on_channel(args).await
+            })
         });
         
         // Register close_channel tool
@@ -223,18 +210,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(close_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            
-            // Create a one-shot channel for communicating the result
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            
-            // Spawn a task to execute the async function
-            tokio::spawn(async move {
-                let result = tools_self.close_channel(args).await;
-                let _ = tx.send(result); // Send the result through the channel
-            });
-            
-            // Wait for the result synchronously, but without blocking the runtime
-            rx.blocking_recv().unwrap_or_else(|_| Err(anyhow::anyhow!("Failed to get result from async task")))
+            // Create a runtime for this request
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                tools_self.close_channel(args).await
+            })
         });
     }
 }
