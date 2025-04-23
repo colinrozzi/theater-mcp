@@ -1,62 +1,56 @@
 use anyhow::Result;
-use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
+use mcp_protocol::types::tool::{ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::debug;
 
 use crate::theater::client::TheaterClient;
-use crate::tools::ToolManagerExt;
 
-/// Tools for managing Theater actors
 pub struct ActorTools {
     theater_client: Arc<TheaterClient>,
 }
 
 impl ActorTools {
-    /// Create a new actor tools instance
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
     }
     
-    /// Start a new actor from a manifest
     pub async fn start_actor(&self, args: Value) -> Result<ToolCallResult> {
-        debug!("Starting actor with args: {:?}", args);
-        
         // Extract manifest path
         let manifest = args["manifest"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing manifest parameter"))?;
             
         // Extract optional initial state
         let initial_state = if let Some(state) = args.get("initial_state") {
-            Some(serde_json::to_vec(state)?)
+            // Convert to JSON bytes
+            let state_bytes = serde_json::to_vec(state)?;
+            Some(state_bytes)
         } else {
             None
         };
         
         // Start the actor
-        let initial_state_bytes = initial_state.as_deref();
-        let actor_id = self.theater_client.start_actor(manifest, initial_state_bytes).await?;
+        let actor_id = match initial_state {
+            Some(ref bytes) => self.theater_client.start_actor(manifest, Some(bytes.as_slice())).await?,
+            None => self.theater_client.start_actor(manifest, None).await?,
+        };
         
         // Create result
-        let result_json = json!({
+        let response_json = json!({
             "actor_id": actor_id,
             "status": "RUNNING"
         });
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json { 
-                    json: result_json
+                ToolContent::Text { 
+                    text: serde_json::to_string(&response_json)? 
                 }
             ],
             is_error: Some(false),
         })
     }
     
-    /// Stop a running actor
     pub async fn stop_actor(&self, args: Value) -> Result<ToolCallResult> {
-        debug!("Stopping actor with args: {:?}", args);
-        
         // Extract actor ID
         let actor_id = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
@@ -65,25 +59,22 @@ impl ActorTools {
         self.theater_client.stop_actor(actor_id).await?;
         
         // Create result
-        let result_json = json!({
+        let response_json = json!({
             "actor_id": actor_id,
             "status": "STOPPED"
         });
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json { 
-                    json: result_json
+                ToolContent::Text { 
+                    text: serde_json::to_string(&response_json)? 
                 }
             ],
             is_error: Some(false),
         })
     }
     
-    /// Restart a running actor
     pub async fn restart_actor(&self, args: Value) -> Result<ToolCallResult> {
-        debug!("Restarting actor with args: {:?}", args);
-        
         // Extract actor ID
         let actor_id = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
@@ -92,28 +83,26 @@ impl ActorTools {
         self.theater_client.restart_actor(actor_id).await?;
         
         // Create result
-        let result_json = json!({
+        let response_json = json!({
             "actor_id": actor_id,
             "status": "RUNNING"
         });
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json { 
-                    json: result_json
+                ToolContent::Text { 
+                    text: serde_json::to_string(&response_json)? 
                 }
             ],
             is_error: Some(false),
         })
     }
     
-    /// Register actor tools with the MCP tool manager
-    pub fn register_tools(
-        self: Arc<Self>,
-        tool_manager: &Arc<mcp_server::tools::ToolManager>,
-    ) {
-        // Register start_actor tool
-        let start_actor_tool = Tool {
+    pub fn register_tools(self: Arc<Self>, tool_manager: &Arc<mcp_server::tools::ToolManager>) {
+        use crate::tools::register_async_tool;
+        
+        // Register the start_actor tool
+        let start_actor_tool = mcp_protocol::types::tool::Tool {
             name: "start_actor".to_string(),
             description: Some("Start a new actor from a manifest".to_string()),
             input_schema: json!({
@@ -133,16 +122,16 @@ impl ActorTools {
             annotations: None,
         };
         
-        let tools_self = self.clone();
-        tool_manager.register_async_tool(start_actor_tool, move |args| {
-            let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.start_actor(args).await
-            })
+        let actor_self = self.clone();
+        register_async_tool(tool_manager, start_actor_tool, move |args| {
+            let actor_self = actor_self.clone();
+            async move {
+                actor_self.start_actor(args).await
+            }
         });
         
-        // Register stop_actor tool
-        let stop_actor_tool = Tool {
+        // Register the stop_actor tool
+        let stop_actor_tool = mcp_protocol::types::tool::Tool {
             name: "stop_actor".to_string(),
             description: Some("Stop a running actor".to_string()),
             input_schema: json!({
@@ -158,16 +147,16 @@ impl ActorTools {
             annotations: None,
         };
         
-        let tools_self = self.clone();
-        tool_manager.register_async_tool(stop_actor_tool, move |args| {
-            let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.stop_actor(args).await
-            })
+        let actor_self = self.clone();
+        register_async_tool(tool_manager, stop_actor_tool, move |args| {
+            let actor_self = actor_self.clone();
+            async move {
+                actor_self.stop_actor(args).await
+            }
         });
         
-        // Register restart_actor tool
-        let restart_actor_tool = Tool {
+        // Register the restart_actor tool
+        let restart_actor_tool = mcp_protocol::types::tool::Tool {
             name: "restart_actor".to_string(),
             description: Some("Restart a running actor".to_string()),
             input_schema: json!({
@@ -183,12 +172,12 @@ impl ActorTools {
             annotations: None,
         };
         
-        let tools_self = self.clone();
-        tool_manager.register_async_tool(restart_actor_tool, move |args| {
-            let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.restart_actor(args).await
-            })
+        let actor_self = self.clone();
+        register_async_tool(tool_manager, restart_actor_tool, move |args| {
+            let actor_self = actor_self.clone();
+            async move {
+                actor_self.restart_actor(args).await
+            }
         });
     }
 }

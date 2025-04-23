@@ -6,4 +6,4 @@ mod utils;
 pub use actor::ActorTools;
 pub use message::MessageTools;
 pub use channel::ChannelTools;
-pub use utils::{ToolManagerExt, AsyncToolHandler};
+pub use utils::register_async_tool;

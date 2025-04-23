@@ -1,28 +1,21 @@
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
+use mcp_protocol::types::tool::{ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::debug;
 
 use crate::theater::client::TheaterClient;
-use crate::tools::ToolManagerExt;
 
-/// Tools for sending messages to Theater actors
 pub struct MessageTools {
     theater_client: Arc<TheaterClient>,
 }
 
 impl MessageTools {
-    /// Create a new message tools instance
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
     }
     
-    /// Send a one-way message to an actor
     pub async fn send_message(&self, args: Value) -> Result<ToolCallResult> {
-        debug!("Sending message with args: {:?}", args);
-        
         // Extract actor ID
         let actor_id = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
@@ -38,25 +31,22 @@ impl MessageTools {
         self.theater_client.send_message(actor_id, &data).await?;
         
         // Create result
-        let result_json = json!({
+        let response_json = json!({
             "success": true,
             "actor_id": actor_id
         });
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json { 
-                    json: result_json
+                ToolContent::Text { 
+                    text: serde_json::to_string(&response_json)? 
                 }
             ],
             is_error: Some(false),
         })
     }
     
-    /// Send a request to an actor and receive a response
     pub async fn request_message(&self, args: Value) -> Result<ToolCallResult> {
-        debug!("Sending request message with args: {:?}", args);
-        
         // Extract actor ID
         let actor_id = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
@@ -75,28 +65,26 @@ impl MessageTools {
         let response_b64 = BASE64.encode(&response_data);
         
         // Create result
-        let result_json = json!({
+        let response_json = json!({
             "actor_id": actor_id,
             "response": response_b64
         });
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json { 
-                    json: result_json
+                ToolContent::Text { 
+                    text: serde_json::to_string(&response_json)? 
                 }
             ],
             is_error: Some(false),
         })
     }
     
-    /// Register message tools with the MCP tool manager
-    pub fn register_tools(
-        self: Arc<Self>,
-        tool_manager: &Arc<mcp_server::tools::ToolManager>,
-    ) {
-        // Register send_message tool
-        let send_message_tool = Tool {
+    pub fn register_tools(self: Arc<Self>, tool_manager: &Arc<mcp_server::tools::ToolManager>) {
+        use crate::tools::utils::register_async_tool;
+        
+        // Register the send_message tool
+        let send_message_tool = mcp_protocol::types::tool::Tool {
             name: "send_message".to_string(),
             description: Some("Send a message to an actor".to_string()),
             input_schema: json!({
@@ -116,16 +104,16 @@ impl MessageTools {
             annotations: None,
         };
         
-        let tools_self = self.clone();
-        tool_manager.register_async_tool(send_message_tool, move |args| {
-            let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.send_message(args).await
-            })
+        let message_self = self.clone();
+        register_async_tool(tool_manager, send_message_tool, move |args| {
+            let message_self = message_self.clone();
+            async move {
+                message_self.send_message(args).await
+            }
         });
         
-        // Register request_message tool
-        let request_message_tool = Tool {
+        // Register the request_message tool
+        let request_message_tool = mcp_protocol::types::tool::Tool {
             name: "request_message".to_string(),
             description: Some("Send a request to an actor and receive a response".to_string()),
             input_schema: json!({
@@ -145,12 +133,12 @@ impl MessageTools {
             annotations: None,
         };
         
-        let tools_self = self.clone();
-        tool_manager.register_async_tool(request_message_tool, move |args| {
-            let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.request_message(args).await
-            })
+        let message_self = self.clone();
+        register_async_tool(tool_manager, request_message_tool, move |args| {
+            let message_self = message_self.clone();
+            async move {
+                message_self.request_message(args).await
+            }
         });
     }
 }

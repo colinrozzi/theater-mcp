@@ -100,13 +100,13 @@ impl ActorResources {
         T: Send + 'static,
     {
         match Handle::try_current() {
-            Ok(handle) => {
+            Ok(_handle) => {
                 // We're already in a tokio runtime, use spawn_blocking
                 match task::block_in_place(|| {
                     let rt = Handle::current();
                     rt.block_on(f())
                 }) {
-                    Ok(result) => result,
+                    Ok(result) => Ok(result), // Wrap the result in Ok
                     Err(e) => Err(anyhow::anyhow!("Task execution error: {}", e)),
                 }
             },
@@ -151,7 +151,7 @@ impl ActorResources {
             annotations: None,
         };
         
-        resource_manager.register_template(actor_details_template, move |uri, params| {
+        resource_manager.register_template(actor_details_template, move |uri, _params| {
             // We just need to return the expanded URI here,
             // the content will be fetched through a separate mechanism
             Ok(uri)
