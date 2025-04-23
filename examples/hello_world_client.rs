@@ -66,33 +66,40 @@ async fn main() -> Result<()> {
     println!("Waiting for notification to be processed...");
     sleep(Duration::from_secs(2)).await;
 
-    // Step 1: List available actors (to check if our actor is already running)
-    println!("\nListing available actors...");
-    let list_actors_msg: JsonRpcMessage = JsonRpcMessage::Request {
+    // Step 1: List available tools
+    println!("\nListing available tools...");
+    let list_tools_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "2".into(),
-        method: "resources/get".to_string(),
-        params: Some(json!({
-            "uri": "theater://actors",
-        })),
+        method: "tools/list".to_string(),
+        params: None,
     };
-    transport.send(list_actors_msg).await?;
-    let actors_response = recv.recv().await;
-    println!("Actors list response: {:?}", actors_response);
+    transport.send(list_tools_msg).await?;
+    let tools_response = recv.recv().await;
+    println!("Tools list response: {:?}", tools_response);
+    
+    // Step 2: List available resources
+    println!("\nListing available resources...");
+    let list_resources_msg: JsonRpcMessage = JsonRpcMessage::Request {
+        jsonrpc: "2.0".to_string(),
+        id: "3".into(),
+        method: "resources/list".to_string(),
+        params: None,
+    };
+    transport.send(list_resources_msg).await?;
+    let resources_response = recv.recv().await;
+    println!("Resources list response: {:?}", resources_response);
 
-    // Step 2: Start our Hello World actor
+    // Step 3: Start our Hello World actor
     println!("\nStarting Hello World Actor...");
     let manifest_path = "/Users/colinrozzi/work/actors/hello-world-actor/manifest.toml";
     let start_actor_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "3".into(),
-        method: "callTool".to_string(),
+        id: "4".into(),
+        method: "tools/start_actor".to_string(),
         params: Some(json!({
-            "name": "start_actor",
-            "arguments": {
-                "manifest": manifest_path,
-                "initial_state": {"greeting": "Hello from MCP client!"}, // Initial state as a simple JSON object
-            },
+            "manifest": manifest_path,
+            "initial_state": {"greeting": "Hello from MCP client!"}, // Initial state as a simple JSON object
         })),
     };
     transport.send(start_actor_msg).await?;
@@ -103,27 +110,10 @@ async fn main() -> Result<()> {
     let actor_id = match &start_response {
         Some(JsonRpcMessage::Response { result, .. }) => {
             if let Some(result_obj) = result {
-                if let Some(content) = result_obj.get("content") {
-                    if let Some(content_arr) = content.as_array() {
-                        if !content_arr.is_empty() {
-                            if let Some(json_content) = content_arr[0].get("json") {
-                                if let Some(actor_id) = json_content.get("actor_id") {
-                                    actor_id.as_str().unwrap_or("").to_string()
-                                } else {
-                                    "".to_string()
-                                }
-                            } else {
-                                "".to_string()
-                            }
-                        } else {
-                            "".to_string()
-                        }
-                    } else {
-                        "".to_string()
-                    }
-                } else {
-                    "".to_string()
-                }
+                result_obj.get("actor_id")
+                    .and_then(|id| id.as_str())
+                    .unwrap_or("")
+                    .to_string()
             } else {
                 "".to_string()
             }
@@ -139,74 +129,78 @@ async fn main() -> Result<()> {
     println!("Successfully started actor with ID: {}", actor_id);
     sleep(Duration::from_secs(1)).await;
 
-    // Step 3: Get actor details
-    println!("\nGetting actor details...");
-    let actor_details_msg: JsonRpcMessage = JsonRpcMessage::Request {
+    // Step 4: Get actor resources/details
+    println!("\nGetting actors list...");
+    let actors_list_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "4".into(),
+        id: "5".into(),
         method: "resources/get".to_string(),
         params: Some(json!({
-            "uri": format!("theater://actor/{}", actor_id),
+            "uri": "theater://actors",
         })),
     };
-    transport.send(actor_details_msg).await?;
-    let details_response = recv.recv().await;
-    println!("Actor details response: {:?}", details_response);
+    transport.send(actors_list_msg).await?;
+    let actors_list_response = recv.recv().await;
+    println!("Actors list response: {:?}", actors_list_response);
 
-    // Step 4: Send a one-way message to the actor
+    // Step 5: Send a one-way message to the actor
     println!("\nSending message to actor...");
     let message = "Hello from MCP client!";
     let base64_message = BASE64.encode(message.as_bytes());
     let send_message_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "5".into(),
-        method: "callTool".to_string(),
+        id: "6".into(),
+        method: "tools/send_message".to_string(),
         params: Some(json!({
-            "name": "send_message",
-            "arguments": {
-                "actor_id": actor_id,
-                "data": base64_message,
-            },
+            "actor_id": actor_id,
+            "data": base64_message,
         })),
     };
     transport.send(send_message_msg).await?;
     let send_response = recv.recv().await;
     println!("Send message response: {:?}", send_response);
 
-    // Step 5: Make a request to the actor
+    // Step 6: Make a request to the actor
     println!("\nMaking request to actor...");
     let request = "What is your state?";
     let base64_request = BASE64.encode(request.as_bytes());
     let request_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "6".into(),
-        method: "callTool".to_string(),
+        id: "7".into(),
+        method: "tools/request_message".to_string(),
         params: Some(json!({
-            "name": "request_message",
-            "arguments": {
-                "actor_id": actor_id,
-                "data": base64_request,
-            },
+            "actor_id": actor_id,
+            "data": base64_request,
         })),
     };
     transport.send(request_msg).await?;
     let request_response = recv.recv().await;
     println!("Request response: {:?}", request_response);
 
-    // Step 6: Open a channel to the actor
+    // Try to decode the response if we received one
+    if let Some(JsonRpcMessage::Response { result, .. }) = &request_response {
+        if let Some(result_obj) = result {
+            if let Some(response_b64) = result_obj.get("response").and_then(|r| r.as_str()) {
+                if let Ok(response_bytes) = BASE64.decode(response_b64) {
+                    if let Ok(response_text) = String::from_utf8(response_bytes) {
+                        println!("Decoded response: {}", response_text);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 7: Open a channel to the actor
     println!("\nOpening channel to actor...");
     let channel_message = "Opening a channel";
     let base64_channel_message = BASE64.encode(channel_message.as_bytes());
     let open_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "7".into(),
-        method: "callTool".to_string(),
+        id: "8".into(),
+        method: "tools/open_channel".to_string(),
         params: Some(json!({
-            "name": "open_channel",
-            "arguments": {
-                "actor_id": actor_id,
-                "initial_message": base64_channel_message,
-            },
+            "actor_id": actor_id,
+            "initial_message": base64_channel_message,
         })),
     };
     transport.send(open_channel_msg).await?;
@@ -217,27 +211,10 @@ async fn main() -> Result<()> {
     let channel_id = match &channel_response {
         Some(JsonRpcMessage::Response { result, .. }) => {
             if let Some(result_obj) = result {
-                if let Some(content) = result_obj.get("content") {
-                    if let Some(content_arr) = content.as_array() {
-                        if !content_arr.is_empty() {
-                            if let Some(json_content) = content_arr[0].get("json") {
-                                if let Some(channel_id) = json_content.get("channel_id") {
-                                    channel_id.as_str().unwrap_or("").to_string()
-                                } else {
-                                    "".to_string()
-                                }
-                            } else {
-                                "".to_string()
-                            }
-                        } else {
-                            "".to_string()
-                        }
-                    } else {
-                        "".to_string()
-                    }
-                } else {
-                    "".to_string()
-                }
+                result_obj.get("channel_id")
+                    .and_then(|id| id.as_str())
+                    .unwrap_or("")
+                    .to_string()
             } else {
                 "".to_string()
             }
@@ -246,37 +223,31 @@ async fn main() -> Result<()> {
     };
 
     if !channel_id.is_empty() {
-        // Step 7: Send message on the channel
+        // Step 8: Send message on the channel
         println!("\nSending message on channel...");
         let channel_msg = "Message via channel";
         let base64_channel_msg = BASE64.encode(channel_msg.as_bytes());
         let send_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
             jsonrpc: "2.0".to_string(),
-            id: "8".into(),
-            method: "callTool".to_string(),
+            id: "9".into(),
+            method: "tools/send_on_channel".to_string(),
             params: Some(json!({
-                "name": "send_on_channel",
-                "arguments": {
-                    "channel_id": channel_id,
-                    "message": base64_channel_msg,
-                },
+                "channel_id": channel_id,
+                "message": base64_channel_msg,
             })),
         };
         transport.send(send_channel_msg).await?;
         let send_channel_response = recv.recv().await;
         println!("Send on channel response: {:?}", send_channel_response);
 
-        // Step 8: Close the channel
+        // Step 9: Close the channel
         println!("\nClosing channel...");
         let close_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
             jsonrpc: "2.0".to_string(),
-            id: "9".into(),
-            method: "callTool".to_string(),
+            id: "10".into(),
+            method: "tools/close_channel".to_string(),
             params: Some(json!({
-                "name": "close_channel",
-                "arguments": {
-                    "channel_id": channel_id,
-                },
+                "channel_id": channel_id,
             })),
         };
         transport.send(close_channel_msg).await?;
@@ -284,11 +255,11 @@ async fn main() -> Result<()> {
         println!("Close channel response: {:?}", close_channel_response);
     }
 
-    // Step 9: Get actor events (to see the history of what happened)
+    // Step 10: Get actor events
     println!("\nGetting actor events...");
     let events_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "10".into(),
+        id: "11".into(),
         method: "resources/get".to_string(),
         params: Some(json!({
             "uri": format!("theater://events/{}", actor_id),
@@ -298,17 +269,14 @@ async fn main() -> Result<()> {
     let events_response = recv.recv().await;
     println!("Actor events response: {:?}", events_response);
 
-    // Step 10: Clean up - stop the actor
+    // Step 11: Clean up - stop the actor
     println!("\nStopping actor...");
     let stop_actor_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
-        id: "11".into(),
-        method: "callTool".to_string(),
+        id: "12".into(),
+        method: "tools/stop_actor".to_string(),
         params: Some(json!({
-            "name": "stop_actor",
-            "arguments": {
-                "actor_id": actor_id,
-            },
+            "actor_id": actor_id,
         })),
     };
     transport.send(stop_actor_msg).await?;
