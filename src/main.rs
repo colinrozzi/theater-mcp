@@ -20,7 +20,7 @@ struct Args {
     log_level: Level,
 
     /// Log to file instead of stderr
-    #[arg(short, long)]
+    #[arg(long)]
     log_file: Option<PathBuf>,
 }
 
@@ -42,9 +42,9 @@ async fn main() -> Result<()> {
     // Create and run the Theater MCP server
     let server = TheaterMcpServer::new(theater_addr, StdioTransport::new()).await?;
     info!("Theater MCP server started");
-    
+
     // Run the server (blocks until completion)
     server.run().await?;
-    
+
     Ok(())
 }
