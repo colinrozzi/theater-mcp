@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use theater_mcp_server::server::TheaterMcpServer;
 use tracing::{info, Level};
+use tracing_appender;
 use tracing_subscriber::FmtSubscriber;
 
 /// MCP server for interfacing with the Theater WebAssembly actor system
@@ -20,8 +21,11 @@ struct Args {
     log_level: Level,
 
     /// Log to file instead of stderr
-    #[arg(long)]
-    log_file: Option<PathBuf>,
+    #[arg(
+        long,
+        default_value = "/Users/colinrozzi/work/mcp-servers/theater-mcp-server/theater_mcp.log"
+    )]
+    log_file: PathBuf,
 }
 
 #[tokio::main]
@@ -32,6 +36,10 @@ async fn main() -> Result<()> {
     // Initialize logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(args.log_level)
+        .with_writer(tracing_appender::rolling::never(
+            args.log_file,
+            "theater_mcp.log",
+        ))
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
