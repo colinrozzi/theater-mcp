@@ -1,28 +1,26 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tracing::{debug, trace};
+use std::sync::Arc;
+use tracing::{trace, error};
 use uuid::Uuid;
 
-use super::types::TheaterError;
+use crate::theater::types::TheaterError;
 
-/// Client for communicating with the Theater server
+/// Client for connecting to and interacting with a Theater server
 pub struct TheaterClient {
     connection: Arc<Mutex<TcpStream>>,
 }
 
 impl TheaterClient {
-    /// Connect to a Theater server
+    /// Connect to a Theater server at the given address
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
-        debug!("Connecting to Theater server at {}", addr);
-        let stream = TcpStream::connect(addr)
-            .await
-            .context("Failed to connect to Theater server")?;
+        let stream = TcpStream::connect(addr).await
+            .map_err(|e| anyhow!("Failed to connect to Theater server: {}", e))?;
         
         Ok(Self {
             connection: Arc::new(Mutex::new(stream)),
@@ -31,12 +29,13 @@ impl TheaterClient {
     
     /// Send a command to the Theater server and receive a response
     async fn send_command(&self, command: Value) -> Result<Value> {
-        let mut connection = self.connection.lock().await;
-        
-        // Create message frame with length prefix
+        // Create message frame
         let message = serde_json::to_vec(&command)?;
         let len = message.len() as u32;
         let len_bytes = len.to_be_bytes();
+        
+        // Get connection lock
+        let mut connection = self.connection.lock().await;
         
         trace!("Sending command: {:?}", command);
         
@@ -70,25 +69,18 @@ impl TheaterClient {
         Ok(response)
     }
     
-    //
-    // Actor Management Methods
-    //
-    
     /// List all running actors
     pub async fn list_actors(&self) -> Result<Vec<String>> {
+        // In this version, the key is just the command name without the method/id structure
         let command = json!({
-            "method": "ListActors",
-            "id": Uuid::new_v4().to_string(),
-            "params": {}
+            "ListActors": {}
         });
         
         let response = self.send_command(command).await?;
         
         // Extract actor IDs from response
         let actors = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("actors"))
+            .get("actors")
             .and_then(|a| a.as_array())
             .ok_or_else(|| anyhow!("Invalid response format"))?
             .iter()
@@ -106,10 +98,9 @@ impl TheaterClient {
             Value::Null
         };
         
+        // The Theater server expects direct command objects, not JSON-RPC style
         let command = json!({
-            "method": "StartActor",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
+            "StartActor": {
                 "manifest": manifest,
                 "initial_state": initial_state_value
             }
@@ -119,9 +110,7 @@ impl TheaterClient {
         
         // Extract actor ID from response
         let actor_id = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("id"))
+            .get("id")
             .and_then(|id| id.as_str())
             .ok_or_else(|| anyhow!("Invalid response format"))?
             .to_string();
@@ -132,10 +121,8 @@ impl TheaterClient {
     /// Stop a running actor
     pub async fn stop_actor(&self, actor_id: &str) -> Result<()> {
         let command = json!({
-            "method": "StopActor",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id
+            "StopActor": {
+                "actor_id": actor_id
             }
         });
         
@@ -146,10 +133,8 @@ impl TheaterClient {
     /// Restart a running actor
     pub async fn restart_actor(&self, actor_id: &str) -> Result<()> {
         let command = json!({
-            "method": "RestartActor",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id
+            "RestartActor": {
+                "actor_id": actor_id
             }
         });
         
@@ -160,20 +145,15 @@ impl TheaterClient {
     /// Get the current state of an actor
     pub async fn get_actor_state(&self, actor_id: &str) -> Result<Option<Value>> {
         let command = json!({
-            "method": "GetActorState",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id
+            "GetActorState": {
+                "actor_id": actor_id
             }
         });
         
         let response = self.send_command(command).await?;
         
         // Extract state from response
-        let state = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("state"));
+        let state = response.get("state");
             
         if let Some(state) = state {
             if state.is_null() {
@@ -189,10 +169,8 @@ impl TheaterClient {
     /// Get the event history for an actor
     pub async fn get_actor_events(&self, actor_id: &str) -> Result<Vec<Value>> {
         let command = json!({
-            "method": "GetActorEvents",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id
+            "GetActorEvents": {
+                "actor_id": actor_id
             }
         });
         
@@ -200,9 +178,7 @@ impl TheaterClient {
         
         // Extract events from response
         let events = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("events"))
+            .get("events")
             .and_then(|e| e.as_array())
             .ok_or_else(|| anyhow!("Invalid response format"))?
             .clone();
@@ -210,17 +186,11 @@ impl TheaterClient {
         Ok(events)
     }
     
-    //
-    // Actor Message Methods
-    //
-    
     /// Send a one-way message to an actor
     pub async fn send_message(&self, actor_id: &str, data: &[u8]) -> Result<()> {
         let command = json!({
-            "method": "SendActorMessage",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id,
+            "SendActorMessage": {
+                "actor_id": actor_id,
                 "data": BASE64.encode(data)
             }
         });
@@ -232,10 +202,8 @@ impl TheaterClient {
     /// Send a request to an actor and receive a response
     pub async fn request_message(&self, actor_id: &str, data: &[u8]) -> Result<Vec<u8>> {
         let command = json!({
-            "method": "RequestActorMessage",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
-                "id": actor_id,
+            "RequestActorMessage": {
+                "actor_id": actor_id,
                 "data": BASE64.encode(data)
             }
         });
@@ -244,9 +212,7 @@ impl TheaterClient {
         
         // Extract response data
         let response_data = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("response"))
+            .get("data")
             .and_then(|d| d.as_str())
             .ok_or_else(|| anyhow!("Invalid response format"))?;
             
@@ -254,11 +220,7 @@ impl TheaterClient {
         Ok(data)
     }
     
-    //
-    // Channel Methods
-    //
-    
-    /// Open a communication channel with an actor
+    /// Open a channel to an actor
     pub async fn open_channel(&self, actor_id: &str, initial_message: Option<&[u8]>) -> Result<String> {
         let initial_data = if let Some(data) = initial_message {
             BASE64.encode(data)
@@ -267,9 +229,7 @@ impl TheaterClient {
         };
         
         let command = json!({
-            "method": "OpenChannel",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
+            "OpenChannel": {
                 "actor_id": actor_id,
                 "initial_message": initial_data
             }
@@ -279,9 +239,7 @@ impl TheaterClient {
         
         // Extract channel ID
         let channel_id = response
-            .get("result")
-            .and_then(|r| r.as_object())
-            .and_then(|o| o.get("channel_id"))
+            .get("channel_id")
             .and_then(|id| id.as_str())
             .ok_or_else(|| anyhow!("Invalid response format"))?
             .to_string();
@@ -292,9 +250,7 @@ impl TheaterClient {
     /// Send a message on an open channel
     pub async fn send_on_channel(&self, channel_id: &str, message: &[u8]) -> Result<()> {
         let command = json!({
-            "method": "SendOnChannel",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
+            "SendOnChannel": {
                 "channel_id": channel_id,
                 "message": BASE64.encode(message)
             }
@@ -307,9 +263,7 @@ impl TheaterClient {
     /// Close an open channel
     pub async fn close_channel(&self, channel_id: &str) -> Result<()> {
         let command = json!({
-            "method": "CloseChannel",
-            "id": Uuid::new_v4().to_string(),
-            "params": {
+            "CloseChannel": {
                 "channel_id": channel_id
             }
         });
