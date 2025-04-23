@@ -3,6 +3,9 @@ use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate}
 use serde_json::json;
 use std::sync::Arc;
 use tracing::debug;
+use tokio::runtime::Handle;
+use tokio::task;
+use std::future::Future;
 
 use crate::theater::client::TheaterClient;
 
@@ -89,6 +92,31 @@ impl ActorResources {
         })
     }
     
+    // Helper function to spawn an async task that can be used in sync callbacks
+    fn spawn_blocking<F, Fut, T>(f: F) -> Result<T>
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T>> + Send + 'static,
+        T: Send + 'static,
+    {
+        match Handle::try_current() {
+            Ok(handle) => {
+                // We're already in a tokio runtime, use spawn_blocking
+                match task::block_in_place(|| {
+                    let rt = Handle::current();
+                    rt.block_on(f())
+                }) {
+                    Ok(result) => result,
+                    Err(e) => Err(anyhow::anyhow!("Task execution error: {}", e)),
+                }
+            },
+            Err(_) => {
+                // No runtime, this is unexpected but try a direct approach
+                Err(anyhow::anyhow!("No Tokio runtime available"))
+            }
+        }
+    }
+    
     /// Register actor resources with the MCP resource manager
     pub fn register_resources(
         self: Arc<Self>,
@@ -107,14 +135,11 @@ impl ActorResources {
         let actors_self = self.clone();
         resource_manager.register_resource(actors_list_resource, move || {
             let actors_self = actors_self.clone();
-            let fut = actors_self.get_actors_list_content();
             
-            // Use the current runtime handle instead of creating a new one
-            let handle = tokio::runtime::Handle::current();
-            match handle.block_on(fut) {
-                Ok(content) => Ok(vec![content]),
-                Err(e) => Err(e),
-            }
+            Self::spawn_blocking(move || async move {
+                let content = actors_self.get_actors_list_content().await?;
+                Ok(vec![content])
+            })
         });
         
         // Register the actor details resource template
@@ -126,13 +151,7 @@ impl ActorResources {
             annotations: None,
         };
         
-        let actors_self = self.clone();
         resource_manager.register_template(actor_details_template, move |uri, params| {
-            let actors_self = actors_self.clone();
-            let actor_id = params.get("actor_id")
-                .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?
-                .clone();
-            
             // We just need to return the expanded URI here,
             // the content will be fetched through a separate mechanism
             Ok(uri)
@@ -147,8 +166,7 @@ impl ActorResources {
             annotations: None,
         };
         
-        let actors_self = self.clone();
-        resource_manager.register_template(actor_state_template, move |uri, params| {
+        resource_manager.register_template(actor_state_template, move |uri, _params| {
             // We just need to return the expanded URI here
             Ok(uri)
         });

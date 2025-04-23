@@ -45,8 +45,7 @@ impl EventResources {
             annotations: None,
         };
         
-        let events_self = self.clone();
-        resource_manager.register_template(events_template, move |uri, params| {
+        resource_manager.register_template(events_template, move |uri, _params| {
             // We just need to return the expanded URI here
             Ok(uri)
         });

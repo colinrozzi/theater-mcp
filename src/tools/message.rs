@@ -3,10 +3,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 use tracing::debug;
 
 use crate::theater::client::TheaterClient;
+use crate::tools::ToolManagerExt;
 
 /// Tools for sending messages to Theater actors
 pub struct MessageTools {
@@ -45,8 +45,8 @@ impl MessageTools {
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Text { 
-                    text: result_json.to_string()
+                ToolContent::Json { 
+                    json: result_json
                 }
             ],
             is_error: Some(false),
@@ -82,8 +82,8 @@ impl MessageTools {
         
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Text { 
-                    text: result_json.to_string()
+                ToolContent::Json { 
+                    json: result_json
                 }
             ],
             is_error: Some(false),
@@ -117,11 +117,9 @@ impl MessageTools {
         };
         
         let tools_self = self.clone();
-        tool_manager.register_tool(send_message_tool, move |args| {
+        tool_manager.register_async_tool(send_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            // Create a runtime for this request
-            let rt = Runtime::new().unwrap();
-            rt.block_on(async {
+            Box::pin(async move {
                 tools_self.send_message(args).await
             })
         });
@@ -148,11 +146,9 @@ impl MessageTools {
         };
         
         let tools_self = self.clone();
-        tool_manager.register_tool(request_message_tool, move |args| {
+        tool_manager.register_async_tool(request_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            // Create a runtime for this request
-            let rt = Runtime::new().unwrap();
-            rt.block_on(async {
+            Box::pin(async move {
                 tools_self.request_message(args).await
             })
         });
