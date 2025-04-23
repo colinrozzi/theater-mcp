@@ -90,16 +90,19 @@ async fn main() -> Result<()> {
     let resources_response = recv.recv().await;
     println!("Resources list response: {:?}", resources_response);
 
-    // Step 3: Start our Hello World actor
+    // Step 3: Start our Hello World actor - use tools/call as specified in the protocol
     println!("\nStarting Hello World Actor...");
     let manifest_path = "/Users/colinrozzi/work/actors/hello-world-actor/manifest.toml";
     let start_actor_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "4".into(),
-        method: "tools/start_actor".to_string(),
+        method: "tools/call".to_string(),
         params: Some(json!({
-            "manifest": manifest_path,
-            "initial_state": {"greeting": "Hello from MCP client!"}, // Initial state as a simple JSON object
+            "name": "start_actor",
+            "arguments": {
+                "manifest": manifest_path,
+                "initial_state": {"greeting": "Hello from MCP client!"} // Initial state as a simple JSON object
+            }
         })),
     };
     transport.send(start_actor_msg).await?;
@@ -110,10 +113,27 @@ async fn main() -> Result<()> {
     let actor_id = match &start_response {
         Some(JsonRpcMessage::Response { result, .. }) => {
             if let Some(result_obj) = result {
-                result_obj.get("actor_id")
-                    .and_then(|id| id.as_str())
-                    .unwrap_or("")
-                    .to_string()
+                if let Some(content) = result_obj.get("content") {
+                    if let Some(content_arr) = content.as_array() {
+                        if !content_arr.is_empty() {
+                            if let Some(json_content) = content_arr[0].get("json") {
+                                if let Some(actor_id) = json_content.get("actor_id") {
+                                    actor_id.as_str().unwrap_or("").to_string()
+                                } else {
+                                    "".to_string()
+                                }
+                            } else {
+                                "".to_string()
+                            }
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    }
+                } else {
+                    "".to_string()
+                }
             } else {
                 "".to_string()
             }
@@ -136,7 +156,7 @@ async fn main() -> Result<()> {
         id: "5".into(),
         method: "resources/get".to_string(),
         params: Some(json!({
-            "uri": "theater://actors",
+            "uri": "theater://actors"
         })),
     };
     transport.send(actors_list_msg).await?;
@@ -150,10 +170,13 @@ async fn main() -> Result<()> {
     let send_message_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "6".into(),
-        method: "tools/send_message".to_string(),
+        method: "tools/call".to_string(),
         params: Some(json!({
-            "actor_id": actor_id,
-            "data": base64_message,
+            "name": "send_message",
+            "arguments": {
+                "actor_id": actor_id,
+                "data": base64_message
+            }
         })),
     };
     transport.send(send_message_msg).await?;
@@ -167,10 +190,13 @@ async fn main() -> Result<()> {
     let request_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "7".into(),
-        method: "tools/request_message".to_string(),
+        method: "tools/call".to_string(),
         params: Some(json!({
-            "actor_id": actor_id,
-            "data": base64_request,
+            "name": "request_message",
+            "arguments": {
+                "actor_id": actor_id,
+                "data": base64_request
+            }
         })),
     };
     transport.send(request_msg).await?;
@@ -180,10 +206,18 @@ async fn main() -> Result<()> {
     // Try to decode the response if we received one
     if let Some(JsonRpcMessage::Response { result, .. }) = &request_response {
         if let Some(result_obj) = result {
-            if let Some(response_b64) = result_obj.get("response").and_then(|r| r.as_str()) {
-                if let Ok(response_bytes) = BASE64.decode(response_b64) {
-                    if let Ok(response_text) = String::from_utf8(response_bytes) {
-                        println!("Decoded response: {}", response_text);
+            if let Some(content) = result_obj.get("content") {
+                if let Some(content_arr) = content.as_array() {
+                    if !content_arr.is_empty() {
+                        if let Some(json_content) = content_arr[0].get("json") {
+                            if let Some(response_b64) = json_content.get("response").and_then(|r| r.as_str()) {
+                                if let Ok(response_bytes) = BASE64.decode(response_b64) {
+                                    if let Ok(response_text) = String::from_utf8(response_bytes) {
+                                        println!("Decoded response: {}", response_text);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -197,10 +231,13 @@ async fn main() -> Result<()> {
     let open_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "8".into(),
-        method: "tools/open_channel".to_string(),
+        method: "tools/call".to_string(),
         params: Some(json!({
-            "actor_id": actor_id,
-            "initial_message": base64_channel_message,
+            "name": "open_channel",
+            "arguments": {
+                "actor_id": actor_id,
+                "initial_message": base64_channel_message
+            }
         })),
     };
     transport.send(open_channel_msg).await?;
@@ -211,10 +248,27 @@ async fn main() -> Result<()> {
     let channel_id = match &channel_response {
         Some(JsonRpcMessage::Response { result, .. }) => {
             if let Some(result_obj) = result {
-                result_obj.get("channel_id")
-                    .and_then(|id| id.as_str())
-                    .unwrap_or("")
-                    .to_string()
+                if let Some(content) = result_obj.get("content") {
+                    if let Some(content_arr) = content.as_array() {
+                        if !content_arr.is_empty() {
+                            if let Some(json_content) = content_arr[0].get("json") {
+                                if let Some(channel_id) = json_content.get("channel_id") {
+                                    channel_id.as_str().unwrap_or("").to_string()
+                                } else {
+                                    "".to_string()
+                                }
+                            } else {
+                                "".to_string()
+                            }
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    }
+                } else {
+                    "".to_string()
+                }
             } else {
                 "".to_string()
             }
@@ -230,10 +284,13 @@ async fn main() -> Result<()> {
         let send_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
             jsonrpc: "2.0".to_string(),
             id: "9".into(),
-            method: "tools/send_on_channel".to_string(),
+            method: "tools/call".to_string(),
             params: Some(json!({
-                "channel_id": channel_id,
-                "message": base64_channel_msg,
+                "name": "send_on_channel",
+                "arguments": {
+                    "channel_id": channel_id,
+                    "message": base64_channel_msg
+                }
             })),
         };
         transport.send(send_channel_msg).await?;
@@ -245,9 +302,12 @@ async fn main() -> Result<()> {
         let close_channel_msg: JsonRpcMessage = JsonRpcMessage::Request {
             jsonrpc: "2.0".to_string(),
             id: "10".into(),
-            method: "tools/close_channel".to_string(),
+            method: "tools/call".to_string(),
             params: Some(json!({
-                "channel_id": channel_id,
+                "name": "close_channel",
+                "arguments": {
+                    "channel_id": channel_id
+                }
             })),
         };
         transport.send(close_channel_msg).await?;
@@ -262,7 +322,7 @@ async fn main() -> Result<()> {
         id: "11".into(),
         method: "resources/get".to_string(),
         params: Some(json!({
-            "uri": format!("theater://events/{}", actor_id),
+            "uri": format!("theater://events/{}", actor_id)
         })),
     };
     transport.send(events_msg).await?;
@@ -274,9 +334,12 @@ async fn main() -> Result<()> {
     let stop_actor_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "12".into(),
-        method: "tools/stop_actor".to_string(),
+        method: "tools/call".to_string(),
         params: Some(json!({
-            "actor_id": actor_id,
+            "name": "stop_actor",
+            "arguments": {
+                "actor_id": actor_id
+            }
         })),
     };
     transport.send(stop_actor_msg).await?;
