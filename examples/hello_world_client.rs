@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
         params: None,
     };
     transport.send(initialized_msg).await?;
-    
+
     // Add a longer delay to ensure the notification is processed
     println!("Waiting for notification to be processed...");
     sleep(Duration::from_secs(2)).await;
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     transport.send(list_tools_msg).await?;
     let tools_response = recv.recv().await;
     println!("Tools list response: {:?}", tools_response);
-    
+
     // Step 2: List available resources
     println!("\nListing available resources...");
     let list_resources_msg: JsonRpcMessage = JsonRpcMessage::Request {
@@ -106,6 +106,7 @@ async fn main() -> Result<()> {
         })),
     };
     transport.send(start_actor_msg).await?;
+    println!("\nWaiting for actor to start...");
     let start_response = recv.recv().await;
     println!("Start actor response: {:?}", start_response);
 
@@ -210,7 +211,9 @@ async fn main() -> Result<()> {
                 if let Some(content_arr) = content.as_array() {
                     if !content_arr.is_empty() {
                         if let Some(json_content) = content_arr[0].get("json") {
-                            if let Some(response_b64) = json_content.get("response").and_then(|r| r.as_str()) {
+                            if let Some(response_b64) =
+                                json_content.get("response").and_then(|r| r.as_str())
+                            {
                                 if let Ok(response_bytes) = BASE64.decode(response_b64) {
                                     if let Ok(response_text) = String::from_utf8(response_bytes) {
                                         println!("Decoded response: {}", response_text);
