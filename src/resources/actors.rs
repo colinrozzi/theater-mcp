@@ -109,9 +109,9 @@ impl ActorResources {
             let actors_self = actors_self.clone();
             let fut = actors_self.get_actors_list_content();
             
-            // We need to convert an async result into a sync result here
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            match rt.block_on(fut) {
+            // Use the current runtime handle instead of creating a new one
+            let handle = tokio::runtime::Handle::current();
+            match handle.block_on(fut) {
                 Ok(content) => Ok(vec![content]),
                 Err(e) => Err(e),
             }
