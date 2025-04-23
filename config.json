@@ -1,0 +1,15 @@
+
+    "filesystem": {
+      "command": "/Users/colinrozzi/work/mcp-servers/fs-mcp-server/target/release/fs-mcp-server",
+      "args": [
+        "--allowed-dirs",
+        "/Users/colinrozzi/work/mcp-servers/fs-mcp-server/,/Users/colinrozzi/work/theater,/Users/colinrozzi/work/actors,/Users/colinrozzi/work/rust-mcp,/Users/colinrozzi/work/tmp,/Users/colinrozzi/work/mcp-servers"
+      ]
+    },
+    "cargo": {
+      "command": "/Users/colinrozzi/.config/nvm/versions/node/v23.2.0/bin/node",
+      "args": [
+        "/Users/colinrozzi/work/mcp-servers/cargo-mcp/dist/index.js"
+      ]
+    }
+  }

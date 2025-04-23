@@ -7,6 +7,7 @@ edition = "2021"
 # MCP dependencies
 mcp-protocol = { path = "/Users/colinrozzi/work/rust-mcp/mcp-protocol" }
 mcp-server = { path = "/Users/colinrozzi/work/rust-mcp/mcp-server" }
+mcp-client = { path = "/Users/colinrozzi/work/rust-mcp/mcp-client" }
 
 # Common dependencies
 serde = { version = "1.0", features = ["derive"] }

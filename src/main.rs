@@ -49,10 +49,12 @@ async fn main() -> Result<()> {
 
     // Create and run the Theater MCP server
     let server = TheaterMcpServer::new(theater_addr, StdioTransport::new()).await?;
-    info!("Theater MCP server started");
+    info!("Theater MCP server created");
 
     // Run the server (blocks until completion)
+    info!("Starting Theater MCP server...");
     server.run().await?;
+    info!("Theater MCP server stopped");
 
     Ok(())
 }
