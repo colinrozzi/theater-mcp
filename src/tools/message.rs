@@ -39,7 +39,7 @@ impl MessageTools {
         Ok(ToolCallResult {
             content: vec![
                 ToolContent::Text { 
-                    text: serde_json::to_string(&response_json)? 
+                    text: format!("{{\"json\":{}}}", serde_json::to_string(&response_json)?) 
                 }
             ],
             is_error: Some(false),
@@ -73,7 +73,7 @@ impl MessageTools {
         Ok(ToolCallResult {
             content: vec![
                 ToolContent::Text { 
-                    text: serde_json::to_string(&response_json)? 
+                    text: format!("{{\"json\":{}}}", serde_json::to_string(&response_json)?) 
                 }
             ],
             is_error: Some(false),

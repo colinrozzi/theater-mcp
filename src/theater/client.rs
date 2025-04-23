@@ -111,12 +111,19 @@ impl TheaterClient {
         
         let response = self.send_command(command).await?;
         
-        // Extract actor ID from response
-        let actor_id = response
-            .get("id")
-            .and_then(|id| id.as_str())
-            .ok_or_else(|| anyhow!("Invalid response format"))?
-            .to_string();
+        // Debug the response to understand its structure
+        trace!("Start actor response: {:?}", response);
+        
+        // Extract actor ID from response - the structure may vary
+        // Theater might return the ID directly under a key like 'id', 'actor_id', or within a nested structure
+        let actor_id = if let Some(id) = response.get("id").and_then(|id| id.as_str()) {
+            id.to_string()
+        } else if let Some(id) = response.get("actor_id").and_then(|id| id.as_str()) {
+            id.to_string()
+        } else {
+            // Dump the entire response to make debugging easier
+            return Err(anyhow!("Could not find actor ID in response: {:?}", response));
+        };
             
         Ok(actor_id)
     }

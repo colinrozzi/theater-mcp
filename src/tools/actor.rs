@@ -28,22 +28,39 @@ impl ActorTools {
             None
         };
         
-        // Start the actor
+        // Start the actor and capture any errors for better debugging
         let actor_id = match initial_state {
-            Some(ref bytes) => self.theater_client.start_actor(manifest, Some(bytes.as_slice())).await?,
-            None => self.theater_client.start_actor(manifest, None).await?,
+            Some(ref bytes) => match self.theater_client.start_actor(manifest, Some(bytes.as_slice())).await {
+                Ok(id) => id,
+                Err(e) => {
+                    // Log the error for debugging
+                    tracing::error!("Error starting actor: {}", e);
+                    return Err(anyhow::anyhow!("Failed to start actor: {}", e));
+                }
+            },
+            None => match self.theater_client.start_actor(manifest, None).await {
+                Ok(id) => id,
+                Err(e) => {
+                    // Log the error for debugging
+                    tracing::error!("Error starting actor: {}", e);
+                    return Err(anyhow::anyhow!("Failed to start actor: {}", e));
+                }
+            },
         };
         
-        // Create result
+        // Create result that matches the expected format in the client example
+        // The client is looking for content[0].json.actor_id
         let response_json = json!({
             "actor_id": actor_id,
             "status": "RUNNING"
         });
         
+        // ToolContent has been changed from Json to Text, so we need to use the text field
+        // We'll use a structure that aligns with what the client expects
         Ok(ToolCallResult {
             content: vec![
                 ToolContent::Text { 
-                    text: serde_json::to_string(&response_json)? 
+                    text: format!("{{\"json\":{}}}", serde_json::to_string(&response_json)?) 
                 }
             ],
             is_error: Some(false),
@@ -58,7 +75,7 @@ impl ActorTools {
         // Stop the actor
         self.theater_client.stop_actor(actor_id).await?;
         
-        // Create result
+        // Create result that matches the expected format
         let response_json = json!({
             "actor_id": actor_id,
             "status": "STOPPED"
@@ -67,7 +84,7 @@ impl ActorTools {
         Ok(ToolCallResult {
             content: vec![
                 ToolContent::Text { 
-                    text: serde_json::to_string(&response_json)? 
+                    text: format!("{{\"json\":{}}}", serde_json::to_string(&response_json)?) 
                 }
             ],
             is_error: Some(false),
@@ -82,7 +99,7 @@ impl ActorTools {
         // Restart the actor
         self.theater_client.restart_actor(actor_id).await?;
         
-        // Create result
+        // Create result that matches the expected format
         let response_json = json!({
             "actor_id": actor_id,
             "status": "RUNNING"
@@ -91,7 +108,7 @@ impl ActorTools {
         Ok(ToolCallResult {
             content: vec![
                 ToolContent::Text { 
-                    text: serde_json::to_string(&response_json)? 
+                    text: format!("{{\"json\":{}}}", serde_json::to_string(&response_json)?) 
                 }
             ],
             is_error: Some(false),
