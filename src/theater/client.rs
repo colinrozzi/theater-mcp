@@ -92,8 +92,11 @@ impl TheaterClient {
     
     /// Start a new actor from a manifest
     pub async fn start_actor(&self, manifest: &str, initial_state: Option<&[u8]>) -> Result<String> {
+        // The Theater server expects initial_state as a sequence of bytes, not a base64 string
         let initial_state_value = if let Some(state) = initial_state {
-            Value::String(BASE64.encode(state))
+            // Convert the bytes to an array of numbers (u8 values)
+            let byte_array: Vec<u8> = state.to_vec();
+            Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect())
         } else {
             Value::Null
         };
@@ -188,10 +191,14 @@ impl TheaterClient {
     
     /// Send a one-way message to an actor
     pub async fn send_message(&self, actor_id: &str, data: &[u8]) -> Result<()> {
+        // Convert the bytes to an array of numbers for Theater's protocol
+        let byte_array: Vec<u8> = data.to_vec();
+        let data_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
+        
         let command = json!({
             "SendActorMessage": {
                 "actor_id": actor_id,
-                "data": BASE64.encode(data)
+                "data": data_array
             }
         });
         
@@ -201,31 +208,52 @@ impl TheaterClient {
     
     /// Send a request to an actor and receive a response
     pub async fn request_message(&self, actor_id: &str, data: &[u8]) -> Result<Vec<u8>> {
+        // Convert the bytes to an array of numbers for Theater's protocol
+        let byte_array: Vec<u8> = data.to_vec();
+        let data_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
+        
         let command = json!({
             "RequestActorMessage": {
                 "actor_id": actor_id,
-                "data": BASE64.encode(data)
+                "data": data_array
             }
         });
         
         let response = self.send_command(command).await?;
         
-        // Extract response data
+        // Extract response data - Theater may return an array of bytes
         let response_data = response
             .get("data")
-            .and_then(|d| d.as_str())
-            .ok_or_else(|| anyhow!("Invalid response format"))?;
-            
-        let data = BASE64.decode(response_data)?;
+            .ok_or_else(|| anyhow!("Response missing data field"))?;
+        
+        // Handle different formats of response data
+        let data = if response_data.is_array() {
+            // Handle byte array format
+            response_data.as_array()
+                .ok_or_else(|| anyhow!("Invalid data format"))?            
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                .collect()
+        } else if response_data.is_string() {
+            // Handle base64 string format
+            let base64_str = response_data.as_str()
+                .ok_or_else(|| anyhow!("Invalid data format"))?;
+            BASE64.decode(base64_str)?
+        } else {
+            return Err(anyhow!("Unexpected data format in response"));
+        };
+        
         Ok(data)
     }
     
     /// Open a channel to an actor
     pub async fn open_channel(&self, actor_id: &str, initial_message: Option<&[u8]>) -> Result<String> {
+        // Handle initial message as a byte array if present
         let initial_data = if let Some(data) = initial_message {
-            BASE64.encode(data)
+            let byte_array: Vec<u8> = data.to_vec();
+            Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect())
         } else {
-            "".to_string()
+            Value::Array(vec![])
         };
         
         let command = json!({
@@ -249,10 +277,14 @@ impl TheaterClient {
     
     /// Send a message on an open channel
     pub async fn send_on_channel(&self, channel_id: &str, message: &[u8]) -> Result<()> {
+        // Convert the bytes to an array of numbers for Theater's protocol
+        let byte_array: Vec<u8> = message.to_vec();
+        let message_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
+        
         let command = json!({
             "SendOnChannel": {
                 "channel_id": channel_id,
-                "message": BASE64.encode(message)
+                "message": message_array
             }
         });
         
