@@ -184,9 +184,9 @@ impl ChannelTools {
             let tools_self = tools_self.clone();
             let fut = tools_self.send_on_channel(args);
             
-            // Convert async result to sync
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(fut)
+            // Use the current runtime handle instead of creating a new one
+            let handle = tokio::runtime::Handle::current();
+            handle.block_on(fut)
         });
         
         // Register close_channel tool
@@ -211,9 +211,9 @@ impl ChannelTools {
             let tools_self = tools_self.clone();
             let fut = tools_self.close_channel(args);
             
-            // Convert async result to sync
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(fut)
+            // Use the current runtime handle instead of creating a new one
+            let handle = tokio::runtime::Handle::current();
+            handle.block_on(fut)
         });
     }
 }

@@ -164,9 +164,9 @@ impl ActorTools {
             let tools_self = tools_self.clone();
             let fut = tools_self.stop_actor(args);
             
-            // Convert async result to sync
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(fut)
+            // Use the current runtime handle instead of creating a new one
+            let handle = tokio::runtime::Handle::current();
+            handle.block_on(fut)
         });
         
         // Register restart_actor tool
@@ -191,9 +191,9 @@ impl ActorTools {
             let tools_self = tools_self.clone();
             let fut = tools_self.restart_actor(args);
             
-            // Convert async result to sync
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(fut)
+            // Use the current runtime handle instead of creating a new one
+            let handle = tokio::runtime::Handle::current();
+            handle.block_on(fut)
         });
     }
 }
