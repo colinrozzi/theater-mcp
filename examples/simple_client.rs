@@ -53,6 +53,18 @@ async fn main() -> Result<()> {
     let response = recv.recv().await;
     println!("Initialize response: {:?}", response);
 
+    // Send initialized notification
+    println!("Sending initialized notification...");
+    let initialized_msg: JsonRpcMessage = JsonRpcMessage::Notification {
+        jsonrpc: "2.0".to_string(),
+        method: "initialized".to_string(),
+        params: Some(json!({}))
+    };
+    transport.send(initialized_msg).await?;
+
+    // Add a short delay to ensure the notification is processed
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
     // List tools
     println!("\nListing tools...");
     let list_tools_msg: JsonRpcMessage = JsonRpcMessage::Request {
