@@ -115,11 +115,17 @@ impl TheaterClient {
         trace!("Start actor response: {:?}", response);
         
         // Extract actor ID from response - the structure may vary
-        // Theater might return the ID directly under a key like 'id', 'actor_id', or within a nested structure
+        // Based on the actual response: {"ActorStarted": {"id": "1edf3c18-43c0-46f0-80a9-cdcabdf5d137"}}
         let actor_id = if let Some(id) = response.get("id").and_then(|id| id.as_str()) {
             id.to_string()
         } else if let Some(id) = response.get("actor_id").and_then(|id| id.as_str()) {
             id.to_string()
+        } else if let Some(actor_started) = response.get("ActorStarted") {
+            // Extract ID from ActorStarted event
+            actor_started.get("id")
+                .and_then(|id| id.as_str())
+                .ok_or_else(|| anyhow!("Missing id in ActorStarted event: {:?}", actor_started))?
+                .to_string()
         } else {
             // Dump the entire response to make debugging easier
             return Err(anyhow!("Could not find actor ID in response: {:?}", response));
