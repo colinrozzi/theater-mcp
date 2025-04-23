@@ -117,35 +117,79 @@ async fn main() -> Result<()> {
                 if let Some(content) = result_obj.get("content") {
                     if let Some(content_arr) = content.as_array() {
                         if !content_arr.is_empty() {
-                            if let Some(json_content) = content_arr[0].get("json") {
+                            // Check for the text field which contains a JSON string
+                            if let Some(text_content) = content_arr[0].get("text") {
+                                if let Some(text) = text_content.as_str() {
+                                    // Parse the JSON string inside the text field
+                                    match serde_json::from_str::<serde_json::Value>(text) {
+                                        Ok(parsed_json) => {
+                                            // Navigate through the nested structure: {"json": {"actor_id": "..."}}
+                                            if let Some(json_obj) = parsed_json.get("json") {
+                                                if let Some(actor_id) = json_obj.get("actor_id") {
+                                                    actor_id.as_str().unwrap_or("").to_string()
+                                                } else {
+                                                    println!("Failed to find actor_id in json object: {:?}", json_obj);
+                                                    "".to_string()
+                                                }
+                                            } else {
+                                                println!("Failed to find json field in parsed text: {:?}", parsed_json);
+                                                "".to_string()
+                                            }
+                                        },
+                                        Err(e) => {
+                                            println!("Failed to parse text as JSON: {} - Text content: {}", e, text);
+                                            "".to_string()
+                                        }
+                                    }
+                                } else {
+                                    println!("Text content is not a string");
+                                    "".to_string()
+                                }
+                            } else if let Some(json_content) = content_arr[0].get("json") {
+                                // Try the old format just in case
                                 if let Some(actor_id) = json_content.get("actor_id") {
                                     actor_id.as_str().unwrap_or("").to_string()
                                 } else {
+                                    println!("Failed to find actor_id in json content");
                                     "".to_string()
                                 }
                             } else {
+                                println!("Failed to find text or json in content");
                                 "".to_string()
                             }
                         } else {
+                            println!("Content array is empty");
                             "".to_string()
                         }
                     } else {
+                        println!("Content is not an array");
                         "".to_string()
                     }
                 } else {
+                    println!("No content field in result");
                     "".to_string()
                 }
             } else {
+                println!("No result object");
                 "".to_string()
             }
-        }
-        _ => "".to_string(),
+        },
+        Some(JsonRpcMessage::Response { error, .. }) => {
+            println!("Error in start response: {:?}", error);
+            "".to_string()
+        },
+        _ => {
+            println!("Failed to extract actor ID from start response: unexpected message type");
+            "".to_string()
+        },
     };
 
     if actor_id.is_empty() {
         println!("Failed to extract actor ID from start response");
         return Ok(());
     }
+    
+    println!("Successfully started actor with ID: {}", actor_id);
 
     println!("Successfully started actor with ID: {}", actor_id);
     sleep(Duration::from_secs(1)).await;
