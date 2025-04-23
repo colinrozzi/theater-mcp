@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 # MCP dependencies
-mcp-protocol = { path = "../../work/rust-mcp/mcp-protocol" }
-mcp-server = { path = "../../work/rust-mcp/mcp-server" }
+mcp-protocol = { path = "/Users/colinrozzi/work/rust-mcp/mcp-protocol" }
+mcp-server = { path = "/Users/colinrozzi/work/rust-mcp/mcp-server" }
 
 # Common dependencies
 serde = { version = "1.0", features = ["derive"] }
@@ -22,6 +22,7 @@ base64 = "0.21"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 clap = { version = "4.0", features = ["derive"] }
 url = "2.3"
+chrono = "0.4"
 
 [lib]
 name = "theater_mcp_server"

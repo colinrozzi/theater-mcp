@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Context, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 use super::types::TheaterError;
@@ -100,7 +101,7 @@ impl TheaterClient {
     /// Start a new actor from a manifest
     pub async fn start_actor(&self, manifest: &str, initial_state: Option<&[u8]>) -> Result<String> {
         let initial_state_value = if let Some(state) = initial_state {
-            Value::String(base64::encode(state))
+            Value::String(BASE64.encode(state))
         } else {
             Value::Null
         };
@@ -220,7 +221,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string(),
             "params": {
                 "id": actor_id,
-                "data": base64::encode(data)
+                "data": BASE64.encode(data)
             }
         });
         
@@ -235,7 +236,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string(),
             "params": {
                 "id": actor_id,
-                "data": base64::encode(data)
+                "data": BASE64.encode(data)
             }
         });
         
@@ -249,7 +250,7 @@ impl TheaterClient {
             .and_then(|d| d.as_str())
             .ok_or_else(|| anyhow!("Invalid response format"))?;
             
-        let data = base64::decode(response_data)?;
+        let data = BASE64.decode(response_data)?;
         Ok(data)
     }
     
@@ -260,7 +261,7 @@ impl TheaterClient {
     /// Open a communication channel with an actor
     pub async fn open_channel(&self, actor_id: &str, initial_message: Option<&[u8]>) -> Result<String> {
         let initial_data = if let Some(data) = initial_message {
-            base64::encode(data)
+            BASE64.encode(data)
         } else {
             "".to_string()
         };
@@ -295,7 +296,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string(),
             "params": {
                 "channel_id": channel_id,
-                "message": base64::encode(message)
+                "message": BASE64.encode(message)
             }
         });
         

@@ -3,7 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::debug;
 
 use crate::theater::client::TheaterClient;
 
@@ -37,13 +37,15 @@ impl MessageTools {
         self.theater_client.send_message(actor_id, &data).await?;
         
         // Create result
+        let result_json = json!({
+            "success": true,
+            "actor_id": actor_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "success": true,
-                        "actor_id": actor_id
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -72,13 +74,15 @@ impl MessageTools {
         let response_b64 = BASE64.encode(&response_data);
         
         // Create result
+        let result_json = json!({
+            "actor_id": actor_id,
+            "response": response_b64
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "actor_id": actor_id,
-                        "response": response_b64
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -114,9 +118,11 @@ impl MessageTools {
         let tools_self = self.clone();
         tool_manager.register_tool(send_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.send_message(args).await
-            })
+            let fut = tools_self.send_message(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
         
         // Register request_message tool
@@ -143,9 +149,11 @@ impl MessageTools {
         let tools_self = self.clone();
         tool_manager.register_tool(request_message_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.request_message(args).await
-            })
+            let fut = tools_self.request_message(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
     }
 }

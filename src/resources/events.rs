@@ -1,8 +1,8 @@
 use anyhow::Result;
-use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate, ResourceTemplateParameter};
+use mcp_protocol::types::resource::{ResourceContent, ResourceTemplate};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::debug;
 
 use crate::theater::client::TheaterClient;
 
@@ -23,7 +23,12 @@ impl EventResources {
         let events = self.theater_client.get_actor_events(actor_id).await?;
         
         // Return the events as JSON
-        Ok(ResourceContent::Json { json: json!(events) })
+        Ok(ResourceContent {
+            uri: format!("theater://events/{}", actor_id),
+            mime_type: "application/json".to_string(),
+            text: Some(json!(events).to_string()),
+            blob: None,
+        })
     }
     
     /// Register event resources with the MCP resource manager
@@ -34,32 +39,16 @@ impl EventResources {
         // Register the actor events resource template
         let events_template = ResourceTemplate {
             uri_template: "theater://events/{actor_id}".to_string(),
+            name: "Actor Events".to_string(),
+            description: Some("Event chain for a specific actor".to_string()),
             mime_type: Some("application/json".to_string()),
-            is_directory: Some(false),
             annotations: None,
-            parameters: vec![
-                ResourceTemplateParameter {
-                    name: "actor_id".to_string(),
-                    description: Some("ID of the actor".to_string()),
-                    required: Some(true),
-                },
-            ],
         };
         
         let events_self = self.clone();
-        resource_manager.register_template(events_template, move |params| {
-            let events_self = events_self.clone();
-            Box::pin(async move {
-                // Extract actor_id parameter
-                let actor_id = params
-                    .get("actor_id")
-                    .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
-                
-                match events_self.get_actor_events_content(actor_id).await {
-                    Ok(content) => Ok(vec![content]),
-                    Err(e) => Err(e),
-                }
-            })
+        resource_manager.register_template(events_template, move |uri, params| {
+            // We just need to return the expanded URI here
+            Ok(uri)
         });
     }
 }

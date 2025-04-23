@@ -3,7 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::debug;
 
 use crate::theater::client::TheaterClient;
 
@@ -45,13 +45,15 @@ impl ChannelTools {
         };
         
         // Create result
+        let result_json = json!({
+            "channel_id": channel_id,
+            "actor_id": actor_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "channel_id": channel_id,
-                        "actor_id": actor_id
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -77,13 +79,15 @@ impl ChannelTools {
         self.theater_client.send_on_channel(channel_id, &message).await?;
         
         // Create result
+        let result_json = json!({
+            "success": true,
+            "channel_id": channel_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "success": true,
-                        "channel_id": channel_id
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -102,14 +106,16 @@ impl ChannelTools {
         self.theater_client.close_channel(channel_id).await?;
         
         // Create result
+        let result_json = json!({
+            "success": true,
+            "channel_id": channel_id,
+            "status": "CLOSED"
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "success": true,
-                        "channel_id": channel_id,
-                        "status": "CLOSED"
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -145,9 +151,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(open_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.open_channel(args).await
-            })
+            let fut = tools_self.open_channel(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
         
         // Register send_on_channel tool
@@ -174,9 +182,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(send_on_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.send_on_channel(args).await
-            })
+            let fut = tools_self.send_on_channel(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
         
         // Register close_channel tool
@@ -199,9 +209,11 @@ impl ChannelTools {
         let tools_self = self.clone();
         tool_manager.register_tool(close_channel_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.close_channel(args).await
-            })
+            let fut = tools_self.close_channel(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
     }
 }

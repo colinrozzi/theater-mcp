@@ -1,5 +1,4 @@
 use anyhow::Result;
-use mcp_protocol::constants::PROTOCOL_VERSION;
 use mcp_server::{
     resources::ResourceManager,
     server::ServerBuilder,
@@ -8,7 +7,7 @@ use mcp_server::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{info};
 
 use crate::resources::{ActorResources, EventResources};
 use crate::theater::client::TheaterClient;

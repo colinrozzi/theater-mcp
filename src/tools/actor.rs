@@ -2,7 +2,7 @@ use anyhow::Result;
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::debug;
 
 use crate::theater::client::TheaterClient;
 
@@ -37,13 +37,15 @@ impl ActorTools {
         let actor_id = self.theater_client.start_actor(manifest, initial_state_bytes).await?;
         
         // Create result
+        let result_json = json!({
+            "actor_id": actor_id,
+            "status": "RUNNING"
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "actor_id": actor_id,
-                        "status": "RUNNING"
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -62,13 +64,15 @@ impl ActorTools {
         self.theater_client.stop_actor(actor_id).await?;
         
         // Create result
+        let result_json = json!({
+            "actor_id": actor_id,
+            "status": "STOPPED"
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "actor_id": actor_id,
-                        "status": "STOPPED"
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -87,13 +91,15 @@ impl ActorTools {
         self.theater_client.restart_actor(actor_id).await?;
         
         // Create result
+        let result_json = json!({
+            "actor_id": actor_id,
+            "status": "RUNNING"
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "actor_id": actor_id,
-                        "status": "RUNNING"
-                    })
+                ToolContent::Text { 
+                    text: result_json.to_string()
                 }
             ],
             is_error: Some(false),
@@ -129,9 +135,11 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(start_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.start_actor(args).await
-            })
+            let fut = tools_self.start_actor(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
         
         // Register stop_actor tool
@@ -154,9 +162,11 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(stop_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.stop_actor(args).await
-            })
+            let fut = tools_self.stop_actor(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
         
         // Register restart_actor tool
@@ -179,9 +189,11 @@ impl ActorTools {
         let tools_self = self.clone();
         tool_manager.register_tool(restart_actor_tool, move |args| {
             let tools_self = tools_self.clone();
-            Box::pin(async move {
-                tools_self.restart_actor(args).await
-            })
+            let fut = tools_self.restart_actor(args);
+            
+            // Convert async result to sync
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(fut)
         });
     }
 }
