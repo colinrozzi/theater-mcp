@@ -57,13 +57,15 @@ async fn main() -> Result<()> {
     println!("Sending initialized notification...");
     let initialized_msg: JsonRpcMessage = JsonRpcMessage::Notification {
         jsonrpc: "2.0".to_string(),
-        method: "initialized".to_string(),
-        params: Some(json!({}))
+        method: "notifications/initialized".to_string(),
+        params: None  // Try with null params
     };
+    println!("Initialized notification: {:?}", initialized_msg);
     transport.send(initialized_msg).await?;
-
-    // Add a short delay to ensure the notification is processed
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
+    // Add a longer delay to ensure the notification is processed
+    println!("Waiting for notification to be processed...");
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // List tools
     println!("\nListing tools...");
