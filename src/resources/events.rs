@@ -20,6 +20,7 @@ impl EventResources {
     /// Get resource content for an actor's events
     pub async fn get_actor_events_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting events for actor {}", actor_id);
+        
         let events = self.theater_client.get_actor_events(actor_id).await?;
         
         // Return the events as JSON

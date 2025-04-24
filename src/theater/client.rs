@@ -1,14 +1,15 @@
 use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use theater::theater_server::ManagementCommand;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tracing::trace;
-use uuid::Uuid;
+
+use theater::id::TheaterId;
+use theater::theater_server::{ManagementCommand, ManagementResponse};
+use theater::messages::ChannelParticipant;
+use theater::chain::ChainEvent;
 
 use crate::theater::types::TheaterError;
 
@@ -30,8 +31,7 @@ impl TheaterClient {
     }
 
     /// Send a command to the Theater server and receive a response
-    /// This method accepts a JSON Value object for backward compatibility
-    async fn send_command_json(&self, command: Value) -> Result<Value> {
+    async fn send_command(&self, command: ManagementCommand) -> Result<ManagementResponse> {
         // Create message frame
         let message = serde_json::to_vec(&command)?;
         let len = message.len() as u32;
@@ -56,42 +56,27 @@ impl TheaterClient {
         connection.read_exact(&mut response_buf).await?;
 
         // Parse response
-        let response: Value = serde_json::from_slice(&response_buf)?;
+        let response: ManagementResponse = serde_json::from_slice(&response_buf)?;
         trace!("Received response: {:?}", response);
 
         // Check for error
-        if let Some(error) = response.get("error") {
-            let message = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown error")
-                .to_string();
-
-            return Err(TheaterError::ServerError(message).into());
+        if let ManagementResponse::Error { message } = &response {
+            return Err(TheaterError::ServerError(message.clone()).into());
         }
 
         Ok(response)
     }
 
     /// List all running actors
-    pub async fn list_actors(&self) -> Result<Vec<String>> {
-        let command = json!({
-            "method": "ListActors",
-            "id": Uuid::new_v4().to_string(),
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Extract actor IDs from response
-        let actors = response
-            .get("actors")
-            .and_then(|a| a.as_array())
-            .ok_or_else(|| anyhow!("Invalid response format"))?
-            .iter()
-            .filter_map(|a| a.as_str().map(String::from))
-            .collect();
-
-        Ok(actors)
+    pub async fn list_actors(&self) -> Result<Vec<TheaterId>> {
+        let command = ManagementCommand::ListActors;
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ActorList { actors } => Ok(actors),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Start a new actor from a manifest
@@ -99,209 +84,106 @@ impl TheaterClient {
         &self,
         manifest: &str,
         initial_state: Option<&[u8]>,
-    ) -> Result<String> {
-        // The Theater server expects initial_state as a sequence of bytes, not a base64 string
-        let initial_state_value = if let Some(state) = initial_state {
-            // Convert the bytes to an array of numbers (u8 values)
-            let byte_array: Vec<u8> = state.to_vec();
-            Value::Array(
-                byte_array
-                    .into_iter()
-                    .map(|b| Value::Number(b.into()))
-                    .collect(),
-            )
-        } else {
-            Value::Null
+    ) -> Result<TheaterId> {
+        let initial_state_vec = initial_state.map(|s| s.to_vec());
+        
+        let command = ManagementCommand::StartActor {
+            manifest: manifest.to_string(),
+            initial_state: initial_state_vec,
         };
-
-        // The Theater server expects direct command objects, not JSON-RPC style
-        let command = serde_json::json!({
-            "StartActor": {
-                "manifest": manifest,
-                "initial_state": initial_state_value
-            }
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Debug the response to understand its structure
-        trace!("Start actor response: {:?}", response);
-
-        // Extract actor ID from response - the structure may vary
-        // Based on the actual response: {"ActorStarted": {"id": "1edf3c18-43c0-46f0-80a9-cdcabdf5d137"}}
-        let actor_id = if let Some(id) = response.get("id").and_then(|id| id.as_str()) {
-            id.to_string()
-        } else if let Some(id) = response.get("actor_id").and_then(|id| id.as_str()) {
-            id.to_string()
-        } else if let Some(actor_started) = response.get("ActorStarted") {
-            // Extract ID from ActorStarted event
-            actor_started
-                .get("id")
-                .and_then(|id| id.as_str())
-                .ok_or_else(|| anyhow!("Missing id in ActorStarted event: {:?}", actor_started))?
-                .to_string()
-        } else {
-            // Dump the entire response to make debugging easier
-            return Err(anyhow!(
-                "Could not find actor ID in response: {:?}",
-                response
-            ));
-        };
-
-        Ok(actor_id)
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ActorStarted { id } => Ok(id),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Stop a running actor
-    pub async fn stop_actor(&self, actor_id: &str) -> Result<()> {
-        let command = json!({
-            "StopActor": {
-                "actor_id": actor_id
-            }
-        });
-
-        let _response = self.send_command_json(command).await?;
-        Ok(())
+    pub async fn stop_actor(&self, actor_id: &TheaterId) -> Result<()> {
+        let command = ManagementCommand::StopActor {
+            id: actor_id.clone(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ActorStopped { id: _ } => Ok(()),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Restart a running actor
-    pub async fn restart_actor(&self, actor_id: &str) -> Result<()> {
-        let command = json!({
-            "RestartActor": {
-                "actor_id": actor_id
-            }
-        });
-
-        let _response = self.send_command_json(command).await?;
-        Ok(())
+    pub async fn restart_actor(&self, actor_id: &TheaterId) -> Result<()> {
+        let command = ManagementCommand::RestartActor {
+            id: actor_id.clone(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::Restarted { id: _ } => Ok(()),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Get the current state of an actor
-    pub async fn get_actor_state(&self, actor_id: &str) -> Result<Option<Vec<u8>>> {
-        let command = json!({
-            "GetActorState": {
-                "actor_id": actor_id
-            }
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Extract state from response
-        let state = response.get("state");
-
-        if let Some(state) = state {
-            if state.is_null() {
-                return Ok(None);
-            } else if state.is_array() {
-                // Convert array of numbers to bytes
-                let bytes: Result<Vec<u8>, _> = state
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_u64().map(|n| n as u8).ok_or_else(|| anyhow!("Invalid byte value")))
-                    .collect();
-                return Ok(Some(bytes?));
-            } else if state.is_string() {
-                // Try to decode as base64
-                let base64 = state.as_str().unwrap();
-                return Ok(Some(BASE64.decode(base64)?));
-            } else {
-                // Serialize the JSON to bytes
-                return Ok(Some(serde_json::to_vec(state)?));
-            }
+    pub async fn get_actor_state(&self, actor_id: &TheaterId) -> Result<Option<Vec<u8>>> {
+        let command = ManagementCommand::GetActorState {
+            id: actor_id.clone(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ActorState { id: _, state } => Ok(state),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
         }
-
-        Ok(None)
     }
 
     /// Get the event history for an actor
-    pub async fn get_actor_events(&self, actor_id: &str) -> Result<Vec<Value>> {
-        let command = json!({
-            "GetActorEvents": {
-                "actor_id": actor_id
-            }
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Extract events from response
-        let events = response
-            .get("events")
-            .and_then(|e| e.as_array())
-            .ok_or_else(|| anyhow!("Invalid response format"))?
-            .clone();
-
-        Ok(events)
+    pub async fn get_actor_events(&self, actor_id: &TheaterId) -> Result<Vec<ChainEvent>> {
+        let command = ManagementCommand::GetActorEvents {
+            id: actor_id.clone(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ActorEvents { id: _, events } => Ok(events),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Send a one-way message to an actor
-    pub async fn send_message(&self, actor_id: &str, data: &[u8]) -> Result<()> {
-        // Convert the bytes to an array of numbers for Theater's protocol
-        let byte_array: Vec<u8> = data.to_vec();
-        let data_array = Value::Array(
-            byte_array
-                .into_iter()
-                .map(|b| Value::Number(b.into()))
-                .collect(),
-        );
-
-        let command = json!({
-            "SendActorMessage": {
-                "id": actor_id,
-                "data": data_array
-            },
-            "id": Uuid::new_v4().to_string()
-        });
-
-        let _response = self.send_command_json(command).await?;
-        Ok(())
+    pub async fn send_message(&self, actor_id: &TheaterId, data: &[u8]) -> Result<()> {
+        let command = ManagementCommand::SendActorMessage {
+            id: actor_id.clone(),
+            data: data.to_vec(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::SentMessage { id: _ } => Ok(()),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Send a request to an actor and receive a response
-    pub async fn request_message(&self, actor_id: &str, data: &[u8]) -> Result<Vec<u8>> {
-        // Convert the bytes to an array of numbers for Theater's protocol
-        let byte_array: Vec<u8> = data.to_vec();
-        let data_array = Value::Array(
-            byte_array
-                .into_iter()
-                .map(|b| Value::Number(b.into()))
-                .collect(),
-        );
-
-        let command = json!({
-            "RequestActorMessage": {
-                "id": actor_id,
-                "data": data_array
-            },
-            "id": Uuid::new_v4().to_string()
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Extract response data - Theater may return an array of bytes
-        let response_data = response
-            .get("data")
-            .ok_or_else(|| anyhow!("Response missing data field"))?;
-
-        // Handle different formats of response data
-        let data = if response_data.is_array() {
-            // Handle byte array format
-            response_data
-                .as_array()
-                .ok_or_else(|| anyhow!("Invalid data format"))?
-                .iter()
-                .filter_map(|v| v.as_u64().map(|n| n as u8))
-                .collect()
-        } else if response_data.is_string() {
-            // Handle base64 string format
-            let base64_str = response_data
-                .as_str()
-                .ok_or_else(|| anyhow!("Invalid data format"))?;
-            BASE64.decode(base64_str)?
-        } else {
-            return Err(anyhow!("Unexpected data format in response"));
+    pub async fn request_message(&self, actor_id: &TheaterId, data: &[u8]) -> Result<Vec<u8>> {
+        let command = ManagementCommand::RequestActorMessage {
+            id: actor_id.clone(),
+            data: data.to_vec(),
         };
-
-        Ok(data)
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::RequestedMessage { id: _, message } => Ok(message),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Open a channel to an actor
@@ -310,72 +192,50 @@ impl TheaterClient {
         actor_id: &str,
         initial_message: Option<&[u8]>,
     ) -> Result<String> {
-        // Handle initial message as a byte array if present
-        let initial_data = if let Some(data) = initial_message {
-            let byte_array: Vec<u8> = data.to_vec();
-            Value::Array(
-                byte_array
-                    .into_iter()
-                    .map(|b| Value::Number(b.into()))
-                    .collect(),
-            )
-        } else {
-            Value::Array(vec![])
+        // Parse actor ID string to TheaterId
+        let actor_id = TheaterId::parse(actor_id)?;
+        let actor_participant = ChannelParticipant::Actor(actor_id);
+        let initial_data = initial_message.map(|m| m.to_vec()).unwrap_or_default();
+        
+        let command = ManagementCommand::OpenChannel {
+            actor_id: actor_participant,
+            initial_message: initial_data,
         };
-
-        let command = json!({
-            "OpenChannel": {
-                "id": actor_id,
-                "initial_message": initial_data
-            },
-            "id": Uuid::new_v4().to_string()
-        });
-
-        let response = self.send_command_json(command).await?;
-
-        // Extract channel ID
-        let channel_id = response
-            .get("channel_id")
-            .and_then(|id| id.as_str())
-            .ok_or_else(|| anyhow!("Invalid response format"))?
-            .to_string();
-
-        Ok(channel_id)
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ChannelOpened { channel_id, actor_id: _ } => Ok(channel_id),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Send a message on an open channel
     pub async fn send_on_channel(&self, channel_id: &str, message: &[u8]) -> Result<()> {
-        // Convert the bytes to an array of numbers for Theater's protocol
-        let byte_array: Vec<u8> = message.to_vec();
-        let message_array = Value::Array(
-            byte_array
-                .into_iter()
-                .map(|b| Value::Number(b.into()))
-                .collect(),
-        );
-
-        let command = json!({
-            "SendOnChannel": {
-                "channel_id": channel_id,
-                "message": message_array
-            },
-            "id": Uuid::new_v4().to_string()
-        });
-
-        let _response = self.send_command_json(command).await?;
-        Ok(())
+        let command = ManagementCommand::SendOnChannel {
+            channel_id: channel_id.to_string(),
+            message: message.to_vec(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::MessageSent { channel_id: _ } => Ok(()),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 
     /// Close an open channel
     pub async fn close_channel(&self, channel_id: &str) -> Result<()> {
-        let command = json!({
-            "CloseChannel": {
-                "channel_id": channel_id
-            },
-            "id": Uuid::new_v4().to_string()
-        });
-
-        let _response = self.send_command_json(command).await?;
-        Ok(())
+        let command = ManagementCommand::CloseChannel {
+            channel_id: channel_id.to_string(),
+        };
+        
+        let response = self.send_command(command).await?;
+        
+        match response {
+            ManagementResponse::ChannelClosed { channel_id: _ } => Ok(()),
+            _ => Err(anyhow!("Unexpected response type: {:?}", response)),
+        }
     }
 }

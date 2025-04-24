@@ -77,11 +77,13 @@ impl ActorResources {
     /// Get resource content for an actor's state
     pub async fn get_actor_state_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor state for {}", actor_id);
+        
+        // Get the actor state
         let state_result = self.theater_client.get_actor_state(actor_id).await?;
         
-        // Convert binary state to JSON if possible
+        // Process the state
         let content = if let Some(state_bytes) = state_result {
-            // Try to parse as JSON
+            // Try to parse the binary data as JSON
             match serde_json::from_slice::<serde_json::Value>(&state_bytes) {
                 Ok(json_value) => json_value,
                 Err(_) => {
@@ -97,6 +99,7 @@ impl ActorResources {
             json!({})
         };
         
+        // Create the resource content
         Ok(ResourceContent {
             uri: format!("theater://actor/{}/state", actor_id),
             mime_type: "application/json".to_string(),

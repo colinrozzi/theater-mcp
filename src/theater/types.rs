@@ -1,3 +1,6 @@
+use theater::id::TheaterId;
+use theater::messages::ActorStatus as TheaterActorStatus;
+use theater::chain::ChainEvent as TheaterChainEvent;
 use thiserror::Error;
 
 /// Custom error types for Theater client interactions
@@ -24,34 +27,24 @@ pub enum TheaterError {
     ChannelNotFound(String),
 }
 
-/// Actor status
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActorStatus {
-    Running,
-    Stopped,
-    Failed,
+/// Actor status (re-exported from Theater)
+pub type ActorStatus = TheaterActorStatus;
+
+/// Theater event (re-exported from Theater)
+pub type ChainEvent = TheaterChainEvent;
+
+/// Types for converting between string IDs and Theater IDs
+pub trait TheaterIdExt {
+    fn as_string(&self) -> String;
+    fn from_str(s: &str) -> Result<TheaterId, anyhow::Error>;
 }
 
-/// Theater event types 
-#[derive(Debug, Clone)]
-pub enum EventType {
-    StateChanged,
-    MessageReceived,
-    MessageSent,
-    ChannelOpened,
-    ChannelClosed,
-    ActorStarted,
-    ActorStopped,
-    ActorFailed,
-    Custom(String),
-}
-
-/// Theater event
-#[derive(Debug, Clone)]
-pub struct Event {
-    pub event_id: String,
-    pub actor_id: String,
-    pub timestamp: String,
-    pub event_type: EventType,
-    pub data: Option<serde_json::Value>,
+impl TheaterIdExt for TheaterId {
+    fn as_string(&self) -> String {
+        format!("{}", self) // Use explicit formatting to avoid method conflict
+    }
+    
+    fn from_str(s: &str) -> Result<TheaterId, anyhow::Error> {
+        TheaterId::parse(s).map_err(|e| anyhow::anyhow!("Invalid Theater ID: {}", e))
+    }
 }
