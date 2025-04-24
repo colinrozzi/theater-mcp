@@ -111,86 +111,21 @@ async fn main() -> Result<()> {
     println!("Start actor response: {:?}", start_response);
 
     // Extract actor ID from the start response
-    let actor_id = match &start_response {
-        Some(JsonRpcMessage::Response { result, error, .. }) => {
-            if let Some(err) = error {
-                println!("Error in start response: {:?}", err);
-                return "".to_string();
-            }
-            
-            if let Some(result_obj) = result {
-                if let Some(content) = result_obj.get("content") {
-                    if let Some(content_arr) = content.as_array() {
-                        if !content_arr.is_empty() {
-                            // Check for the text field which contains a JSON string
-                            if let Some(text_content) = content_arr[0].get("text") {
-                                if let Some(text) = text_content.as_str() {
-                                    // Parse the JSON string inside the text field
-                                    match serde_json::from_str::<serde_json::Value>(text) {
-                                        Ok(parsed_json) => {
-                                            // Navigate through the nested structure: {"json": {"actor_id": "..."}}
-                                            if let Some(json_obj) = parsed_json.get("json") {
-                                                if let Some(actor_id) = json_obj.get("actor_id") {
-                                                    actor_id.as_str().unwrap_or("").to_string()
-                                                } else {
-                                                    println!("Failed to find actor_id in json object: {:?}", json_obj);
-                                                    "".to_string()
-                                                }
-                                            } else {
-                                                println!("Failed to find json field in parsed text: {:?}", parsed_json);
-                                                "".to_string()
-                                            }
-                                        },
-                                        Err(e) => {
-                                            println!("Failed to parse text as JSON: {} - Text content: {}", e, text);
-                                            "".to_string()
-                                        }
-                                    }
-                                } else {
-                                    println!("Text content is not a string");
-                                    "".to_string()
-                                }
-                            } else if let Some(json_content) = content_arr[0].get("json") {
-                                // Try the old format just in case
-                                if let Some(actor_id) = json_content.get("actor_id") {
-                                    actor_id.as_str().unwrap_or("").to_string()
-                                } else {
-                                    println!("Failed to find actor_id in json content");
-                                    "".to_string()
-                                }
-                            } else {
-                                println!("Failed to find text or json in content");
-                                "".to_string()
-                            }
-                        } else {
-                            println!("Content array is empty");
-                            "".to_string()
-                        }
-                    } else {
-                        println!("Content is not an array");
-                        "".to_string()
-                    }
-                } else {
-                    println!("No content field in result");
-                    "".to_string()
-                }
-            } else {
-                println!("No result object");
-                "".to_string()
-            }
-        },
-
-        _ => {
-            println!("Failed to extract actor ID from start response: unexpected message type");
-            "".to_string()
-        },
-    };
+    let actor_id = extract_actor_id(&start_response)?;
 
     if actor_id.is_empty() {
         println!("Failed to extract actor ID from start response");
         return Ok(());
     }
-    
+
+    println!("Successfully started actor with ID: {}", actor_id);
+    sleep(Duration::from_secs(1)).await;
+
+    if actor_id.is_empty() {
+        println!("Failed to extract actor ID from start response");
+        return Ok(());
+    }
+
     println!("Successfully started actor with ID: {}", actor_id);
     sleep(Duration::from_secs(1)).await;
 
@@ -207,7 +142,7 @@ async fn main() -> Result<()> {
     transport.send(resources_list_msg).await?;
     let resources_list_response = recv.recv().await;
     println!("Resources list response: {:?}", resources_list_response);
-    
+
     // Get specific actor details
     println!("\nGetting actor details...");
     let actor_details_msg: JsonRpcMessage = JsonRpcMessage::Request {
@@ -409,4 +344,75 @@ async fn main() -> Result<()> {
 
     println!("\nHello World Actor test complete!");
     Ok(())
+}
+
+// Helper function to extract actor ID from response
+fn extract_actor_id(response: &Option<JsonRpcMessage>) -> Result<String> {
+    match response {
+        Some(JsonRpcMessage::Response { result, error, .. }) => {
+            if let Some(err) = error {
+                println!("Error in start response: {:?}", err);
+                return Ok("".to_string());
+            }
+
+            if let Some(result_obj) = result {
+                if let Some(content) = result_obj.get("content") {
+                    if let Some(content_arr) = content.as_array() {
+                        if !content_arr.is_empty() {
+                            // Check for the text field which contains a JSON string
+                            if let Some(text_content) = content_arr[0].get("text") {
+                                if let Some(text) = text_content.as_str() {
+                                    // Parse the JSON string inside the text field
+                                    match serde_json::from_str::<serde_json::Value>(text) {
+                                        Ok(parsed_json) => {
+                                            // Navigate through the nested structure: {"json": {"actor_id": "..."}}
+                                            if let Some(json_obj) = parsed_json.get("json") {
+                                                if let Some(actor_id) = json_obj.get("actor_id") {
+                                                    return Ok(actor_id
+                                                        .as_str()
+                                                        .unwrap_or("")
+                                                        .to_string());
+                                                } else {
+                                                    println!("Failed to find actor_id in json object: {:?}", json_obj);
+                                                }
+                                            } else {
+                                                println!("Failed to find json field in parsed text: {:?}", parsed_json);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            println!("Failed to parse text as JSON: {} - Text content: {}", e, text);
+                                        }
+                                    }
+                                } else {
+                                    println!("Text content is not a string");
+                                }
+                            } else if let Some(json_content) = content_arr[0].get("json") {
+                                // Try the old format just in case
+                                if let Some(actor_id) = json_content.get("actor_id") {
+                                    return Ok(actor_id.as_str().unwrap_or("").to_string());
+                                } else {
+                                    println!("Failed to find actor_id in json content");
+                                }
+                            } else {
+                                println!("Failed to find text or json in content");
+                            }
+                        } else {
+                            println!("Content array is empty");
+                        }
+                    } else {
+                        println!("Content is not an array");
+                    }
+                } else {
+                    println!("No content field in result");
+                }
+            } else {
+                println!("No result object");
+            }
+        }
+        _ => {
+            println!("Failed to extract actor ID from start response: unexpected message type");
+        }
+    };
+
+    Ok("".to_string())
 }
