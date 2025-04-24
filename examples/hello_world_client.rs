@@ -121,14 +121,6 @@ async fn main() -> Result<()> {
     println!("Successfully started actor with ID: {}", actor_id);
     sleep(Duration::from_secs(1)).await;
 
-    if actor_id.is_empty() {
-        println!("Failed to extract actor ID from start response");
-        return Ok(());
-    }
-
-    println!("Successfully started actor with ID: {}", actor_id);
-    sleep(Duration::from_secs(1)).await;
-
     // Step 4: Get actor resources/details
     println!("\nGetting resources list...");
     let resources_list_msg: JsonRpcMessage = JsonRpcMessage::Request {
@@ -148,7 +140,7 @@ async fn main() -> Result<()> {
     let actor_details_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "5a".into(),
-        method: "resources/get".to_string(),
+        method: "resources/read".to_string(),
         params: Some(json!({
             "uri": format!("theater://actor/{}", actor_id)
         })),
@@ -316,7 +308,7 @@ async fn main() -> Result<()> {
     let events_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "11".into(),
-        method: "resources/get".to_string(),
+        method: "resources/read".to_string(),
         params: Some(json!({
             "uri": format!("theater://events/{}", actor_id)
         })),
@@ -372,7 +364,10 @@ fn extract_actor_id(response: &Option<JsonRpcMessage>) -> Result<String> {
                                                     .unwrap_or("")
                                                     .to_string());
                                             } else {
-                                                println!("Failed to find actor_id in parsed JSON: {:?}", parsed_json);
+                                                println!(
+                                                    "Failed to find actor_id in parsed JSON: {:?}",
+                                                    parsed_json
+                                                );
                                             }
                                         }
                                         Err(e) => {
