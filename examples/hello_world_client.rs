@@ -365,18 +365,14 @@ fn extract_actor_id(response: &Option<JsonRpcMessage>) -> Result<String> {
                                     // Parse the JSON string inside the text field
                                     match serde_json::from_str::<serde_json::Value>(text) {
                                         Ok(parsed_json) => {
-                                            // Navigate through the nested structure: {"json": {"actor_id": "..."}}
-                                            if let Some(json_obj) = parsed_json.get("json") {
-                                                if let Some(actor_id) = json_obj.get("actor_id") {
-                                                    return Ok(actor_id
-                                                        .as_str()
-                                                        .unwrap_or("")
-                                                        .to_string());
-                                                } else {
-                                                    println!("Failed to find actor_id in json object: {:?}", json_obj);
-                                                }
+                                            // The parsed JSON directly contains actor_id, no nested "json" field
+                                            if let Some(actor_id) = parsed_json.get("actor_id") {
+                                                return Ok(actor_id
+                                                    .as_str()
+                                                    .unwrap_or("")
+                                                    .to_string());
                                             } else {
-                                                println!("Failed to find json field in parsed text: {:?}", parsed_json);
+                                                println!("Failed to find actor_id in parsed JSON: {:?}", parsed_json);
                                             }
                                         }
                                         Err(e) => {
