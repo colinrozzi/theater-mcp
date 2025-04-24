@@ -112,7 +112,12 @@ async fn main() -> Result<()> {
 
     // Extract actor ID from the start response
     let actor_id = match &start_response {
-        Some(JsonRpcMessage::Response { result, .. }) => {
+        Some(JsonRpcMessage::Response { result, error, .. }) => {
+            if let Some(err) = error {
+                println!("Error in start response: {:?}", err);
+                return "".to_string();
+            }
+            
             if let Some(result_obj) = result {
                 if let Some(content) = result_obj.get("content") {
                     if let Some(content_arr) = content.as_array() {
@@ -174,10 +179,7 @@ async fn main() -> Result<()> {
                 "".to_string()
             }
         },
-        Some(JsonRpcMessage::Response { error, .. }) => {
-            println!("Error in start response: {:?}", error);
-            "".to_string()
-        },
+
         _ => {
             println!("Failed to extract actor ID from start response: unexpected message type");
             "".to_string()
@@ -190,23 +192,35 @@ async fn main() -> Result<()> {
     }
     
     println!("Successfully started actor with ID: {}", actor_id);
-
-    println!("Successfully started actor with ID: {}", actor_id);
     sleep(Duration::from_secs(1)).await;
 
     // Step 4: Get actor resources/details
-    println!("\nGetting actors list...");
-    let actors_list_msg: JsonRpcMessage = JsonRpcMessage::Request {
+    println!("\nGetting resources list...");
+    let resources_list_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "5".into(),
-        method: "resources/get".to_string(),
+        method: "resources/list".to_string(),
         params: Some(json!({
-            "uri": "theater://actors"
+            "cursor": ""
         })),
     };
-    transport.send(actors_list_msg).await?;
-    let actors_list_response = recv.recv().await;
-    println!("Actors list response: {:?}", actors_list_response);
+    transport.send(resources_list_msg).await?;
+    let resources_list_response = recv.recv().await;
+    println!("Resources list response: {:?}", resources_list_response);
+    
+    // Get specific actor details
+    println!("\nGetting actor details...");
+    let actor_details_msg: JsonRpcMessage = JsonRpcMessage::Request {
+        jsonrpc: "2.0".to_string(),
+        id: "5a".into(),
+        method: "resources/content".to_string(),
+        params: Some(json!({
+            "uri": format!("theater://actor/{}", actor_id)
+        })),
+    };
+    transport.send(actor_details_msg).await?;
+    let actor_details_response = recv.recv().await;
+    println!("Actor details response: {:?}", actor_details_response);
 
     // Step 5: Send a one-way message to the actor
     println!("\nSending message to actor...");

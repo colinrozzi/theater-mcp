@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use std::sync::Arc;
-use tracing::{trace, error};
+use tracing::trace;
 use uuid::Uuid;
 
 use crate::theater::types::TheaterError;
@@ -73,6 +73,7 @@ impl TheaterClient {
     pub async fn list_actors(&self) -> Result<Vec<String>> {
         // In this version, the key is just the command name without the method/id structure
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "ListActors": {}
         });
         
@@ -103,6 +104,7 @@ impl TheaterClient {
         
         // The Theater server expects direct command objects, not JSON-RPC style
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "StartActor": {
                 "manifest": manifest,
                 "initial_state": initial_state_value
@@ -137,6 +139,7 @@ impl TheaterClient {
     /// Stop a running actor
     pub async fn stop_actor(&self, actor_id: &str) -> Result<()> {
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "StopActor": {
                 "actor_id": actor_id
             }
@@ -149,6 +152,7 @@ impl TheaterClient {
     /// Restart a running actor
     pub async fn restart_actor(&self, actor_id: &str) -> Result<()> {
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "RestartActor": {
                 "actor_id": actor_id
             }
@@ -161,6 +165,7 @@ impl TheaterClient {
     /// Get the current state of an actor
     pub async fn get_actor_state(&self, actor_id: &str) -> Result<Option<Value>> {
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "GetActorState": {
                 "actor_id": actor_id
             }
@@ -209,6 +214,7 @@ impl TheaterClient {
         let data_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
         
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "SendActorMessage": {
                 "actor_id": actor_id,
                 "data": data_array
@@ -226,6 +232,7 @@ impl TheaterClient {
         let data_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
         
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "RequestActorMessage": {
                 "actor_id": actor_id,
                 "data": data_array
@@ -270,6 +277,7 @@ impl TheaterClient {
         };
         
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "OpenChannel": {
                 "actor_id": actor_id,
                 "initial_message": initial_data
@@ -295,6 +303,7 @@ impl TheaterClient {
         let message_array = Value::Array(byte_array.into_iter().map(|b| Value::Number(b.into())).collect());
         
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "SendOnChannel": {
                 "channel_id": channel_id,
                 "message": message_array
@@ -308,6 +317,7 @@ impl TheaterClient {
     /// Close an open channel
     pub async fn close_channel(&self, channel_id: &str) -> Result<()> {
         let command = json!({
+            "id": Uuid::new_v4().to_string(),
             "CloseChannel": {
                 "channel_id": channel_id
             }
