@@ -129,6 +129,15 @@ impl TheaterClient {
         }
     }
 
+    /// Check if an actor exists
+    pub async fn actor_exists(&self, actor_id: &TheaterId) -> Result<bool> {
+        // Try to get the actor's state to determine if it exists
+        match self.get_actor_state(actor_id).await {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
     /// Get the current state of an actor
     pub async fn get_actor_state(&self, actor_id: &TheaterId) -> Result<Option<Vec<u8>>> {
         let command = ManagementCommand::GetActorState {

@@ -33,11 +33,18 @@ impl TheaterMcpServer {
         let actor_resources = Arc::new(ActorResources::new(theater_client.clone()));
         let event_resources = Arc::new(EventResources::new(theater_client.clone()));
 
-        actor_resources.register_resources(&resource_manager);
-        event_resources.register_resources(&resource_manager);
+        actor_resources.clone().register_resources(&resource_manager);
+        event_resources.clone().register_resources(&resource_manager);
 
         // Create and register tools
-        let actor_tools = Arc::new(ActorTools::new(theater_client.clone()));
+        let actor_tools = Arc::new(
+            ActorTools::new(theater_client.clone())
+                .with_resources(
+                    resource_manager.clone(),
+                    actor_resources.clone(),
+                    event_resources.clone()
+                )
+        );
         let message_tools = Arc::new(MessageTools::new(theater_client.clone()));
         let channel_tools = Arc::new(ChannelTools::new(theater_client.clone()));
 

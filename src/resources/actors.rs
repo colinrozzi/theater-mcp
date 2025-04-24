@@ -117,7 +117,7 @@ impl ActorResources {
     }
     
     // Helper function to spawn an async task that can be used in sync callbacks
-    fn spawn_blocking<F, Fut, T>(f: F) -> Result<T>
+    pub fn spawn_blocking<F, Fut, T>(f: F) -> Result<T>
     where
         F: FnOnce() -> Fut + Send + 'static,
         Fut: Future<Output = Result<T>> + Send + 'static,
@@ -138,6 +138,71 @@ impl ActorResources {
                 // No runtime, this is unexpected but try a direct approach
                 Err(anyhow::anyhow!("No Tokio runtime available"))
             }
+        }
+    }
+    
+    /// Register a specific actor's resources
+    pub fn register_actor_resources(
+        self: Arc<Self>,
+        actor_id: String,
+        resource_manager: Arc<mcp_server::resources::ResourceManager>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        let self_clone = self.clone();
+        
+        async move {
+            // Convert string ID to TheaterId
+            let theater_id = TheaterId::from_str(&actor_id)?;
+            
+            // Check if actor exists
+            if !self_clone.theater_client.actor_exists(&theater_id).await? {
+                return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
+            }
+        
+            // Register actor details resource
+            let actor_details_resource = Resource {
+                uri: format!("theater://actor/{}", actor_id),
+                name: format!("Actor {}", actor_id),
+                description: Some("Detailed information about a specific actor".to_string()),
+                mime_type: Some("application/json".to_string()),
+                size: None,
+                annotations: None,
+            };
+            
+            let details_self = self_clone.clone();
+            let details_actor_id = actor_id.clone();
+            resource_manager.register_resource(actor_details_resource, move || {
+                let details_self = details_self.clone();
+                let aid = details_actor_id.clone();
+                
+                Self::spawn_blocking(move || async move {
+                    let content = details_self.get_actor_details_content(&aid).await?;
+                    Ok(vec![content])
+                })
+            });
+        
+            // Register actor state resource
+            let actor_state_resource = Resource {
+                uri: format!("theater://actor/{}/state", actor_id),
+                name: format!("Actor {} State", actor_id),
+                description: Some("Current state of a specific actor".to_string()),
+                mime_type: Some("application/json".to_string()),
+                size: None,
+                annotations: None,
+            };
+            
+            let state_self = self_clone.clone();
+            let state_actor_id = actor_id.clone();
+            resource_manager.register_resource(actor_state_resource, move || {
+                let state_self = state_self.clone();
+                let aid = state_actor_id.clone();
+                
+                Self::spawn_blocking(move || async move {
+                    let content = state_self.get_actor_state_content(&aid).await?;
+                    Ok(vec![content])
+                })
+            });
+            
+            Ok(())
         }
     }
     
@@ -181,6 +246,8 @@ impl ActorResources {
             Ok(uri)
         });
         
+
+        
         // Register the actor state resource template
         let actor_state_template = ResourceTemplate {
             uri_template: "theater://actor/{actor_id}/state".to_string(),
@@ -194,5 +261,7 @@ impl ActorResources {
             // We just need to return the expanded URI here
             Ok(uri)
         });
+        
+
     }
 }

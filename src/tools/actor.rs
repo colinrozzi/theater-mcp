@@ -11,11 +11,31 @@ use crate::tools::utils::register_async_tool;
 
 pub struct ActorTools {
     theater_client: Arc<TheaterClient>,
+    resource_manager: Option<Arc<mcp_server::resources::ResourceManager>>,
+    actor_resources: Option<Arc<crate::resources::ActorResources>>,
+    event_resources: Option<Arc<crate::resources::EventResources>>,
 }
 
 impl ActorTools {
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
-        Self { theater_client }
+        Self {
+            theater_client,
+            resource_manager: None,
+            actor_resources: None,
+            event_resources: None,
+        }
+    }
+    
+    pub fn with_resources(
+        mut self,
+        resource_manager: Arc<mcp_server::resources::ResourceManager>,
+        actor_resources: Arc<crate::resources::ActorResources>,
+        event_resources: Arc<crate::resources::EventResources>,
+    ) -> Self {
+        self.resource_manager = Some(resource_manager);
+        self.actor_resources = Some(actor_resources);
+        self.event_resources = Some(event_resources);
+        self
     }
     
     pub async fn start_actor(&self, args: Value) -> Result<ToolCallResult> {
@@ -52,9 +72,34 @@ impl ActorTools {
             },
         };
         
+        // Register resources for this actor if resource managers are available
+        let actor_id_str = actor_id.as_string();
+        if let (Some(rm), Some(ar), Some(er)) = (
+            &self.resource_manager,
+            &self.actor_resources,
+            &self.event_resources
+        ) {
+            // Prepare resource registration
+            let actor_resources_fut = ar.clone().register_actor_resources(actor_id_str.clone(), rm.clone());
+            let event_resources_fut = er.clone().register_actor_events(actor_id_str.clone(), rm.clone());
+            
+            // Execute them in parallel
+            tokio::spawn(async move {
+                if let Err(e) = actor_resources_fut.await {
+                    error!("Error registering actor resources: {}", e);
+                    // Continue anyway, don't fail the actor start
+                }
+                
+                if let Err(e) = event_resources_fut.await {
+                    error!("Error registering event resources: {}", e);
+                    // Continue anyway, don't fail the actor start
+                }
+            });
+        }
+        
         // Create result
         let result_json = json!({
-            "actor_id": actor_id.as_string(),
+            "actor_id": actor_id_str,
             "status": "RUNNING"
         });
         
