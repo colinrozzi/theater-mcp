@@ -30,7 +30,8 @@ impl TheaterClient {
     }
 
     /// Send a command to the Theater server and receive a response
-    async fn send_command(&self, command: ManagementCommand) -> Result<Value> {
+    /// This method accepts a JSON Value object for backward compatibility
+    async fn send_command_json(&self, command: Value) -> Result<Value> {
         // Create message frame
         let message = serde_json::to_vec(&command)?;
         let len = message.len() as u32;
@@ -74,10 +75,12 @@ impl TheaterClient {
 
     /// List all running actors
     pub async fn list_actors(&self) -> Result<Vec<String>> {
-        // In this version, the key is just the command name without the method/id structure
-        let command = theater::theater_server::ManagementCommand::ListActors;
+        let command = json!({
+            "method": "ListActors",
+            "id": Uuid::new_v4().to_string(),
+        });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Extract actor IDs from response
         let actors = response
@@ -112,7 +115,6 @@ impl TheaterClient {
         };
 
         // The Theater server expects direct command objects, not JSON-RPC style
-        // Do not include an id field for Theater commands
         let command = serde_json::json!({
             "StartActor": {
                 "manifest": manifest,
@@ -120,7 +122,7 @@ impl TheaterClient {
             }
         });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Debug the response to understand its structure
         trace!("Start actor response: {:?}", response);
@@ -157,7 +159,7 @@ impl TheaterClient {
             }
         });
 
-        let _response = self.send_command(command).await?;
+        let _response = self.send_command_json(command).await?;
         Ok(())
     }
 
@@ -169,19 +171,19 @@ impl TheaterClient {
             }
         });
 
-        let _response = self.send_command(command).await?;
+        let _response = self.send_command_json(command).await?;
         Ok(())
     }
 
     /// Get the current state of an actor
-    pub async fn get_actor_state(&self, actor_id: &str) -> Result<Option<Value>> {
+    pub async fn get_actor_state(&self, actor_id: &str) -> Result<Option<Vec<u8>>> {
         let command = json!({
             "GetActorState": {
                 "actor_id": actor_id
             }
         });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Extract state from response
         let state = response.get("state");
@@ -189,8 +191,22 @@ impl TheaterClient {
         if let Some(state) = state {
             if state.is_null() {
                 return Ok(None);
+            } else if state.is_array() {
+                // Convert array of numbers to bytes
+                let bytes: Result<Vec<u8>, _> = state
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_u64().map(|n| n as u8).ok_or_else(|| anyhow!("Invalid byte value")))
+                    .collect();
+                return Ok(Some(bytes?));
+            } else if state.is_string() {
+                // Try to decode as base64
+                let base64 = state.as_str().unwrap();
+                return Ok(Some(BASE64.decode(base64)?));
             } else {
-                return Ok(Some(state.clone()));
+                // Serialize the JSON to bytes
+                return Ok(Some(serde_json::to_vec(state)?));
             }
         }
 
@@ -205,7 +221,7 @@ impl TheaterClient {
             }
         });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Extract events from response
         let events = response
@@ -236,7 +252,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string()
         });
 
-        let _response = self.send_command(command).await?;
+        let _response = self.send_command_json(command).await?;
         Ok(())
     }
 
@@ -259,7 +275,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string()
         });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Extract response data - Theater may return an array of bytes
         let response_data = response
@@ -315,7 +331,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string()
         });
 
-        let response = self.send_command(command).await?;
+        let response = self.send_command_json(command).await?;
 
         // Extract channel ID
         let channel_id = response
@@ -346,7 +362,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string()
         });
 
-        let _response = self.send_command(command).await?;
+        let _response = self.send_command_json(command).await?;
         Ok(())
     }
 
@@ -359,7 +375,7 @@ impl TheaterClient {
             "id": Uuid::new_v4().to_string()
         });
 
-        let _response = self.send_command(command).await?;
+        let _response = self.send_command_json(command).await?;
         Ok(())
     }
 }

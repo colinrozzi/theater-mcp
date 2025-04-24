@@ -6,10 +6,9 @@ use tracing::debug;
 use tokio::runtime::Handle;
 use tokio::task;
 use std::future::Future;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
-use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
-use crate::theater::types::TheaterIdExt;
 
 /// Resources for accessing Theater actors
 pub struct ActorResources {
@@ -29,7 +28,7 @@ impl ActorResources {
         
         let actors = actor_ids.iter().map(|id| {
             json!({
-                "id": id.to_string(),
+                "id": id,
                 "name": format!("Actor {}", id),
                 "status": "RUNNING",
                 "uri": format!("theater://actor/{}", id)
@@ -53,11 +52,8 @@ impl ActorResources {
     pub async fn get_actor_details_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor details for {}", actor_id);
         
-        // Convert string ID to TheaterId
-        let theater_id = TheaterId::from_string(actor_id)?;
-        
         // Attempt to get the actor state to verify it exists
-        if let Err(e) = self.theater_client.get_actor_state(&theater_id).await {
+        if let Err(e) = self.theater_client.get_actor_state(actor_id).await {
             debug!("Failed to get actor state: {}", e);
             return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
         }
@@ -82,27 +78,28 @@ impl ActorResources {
     pub async fn get_actor_state_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor state for {}", actor_id);
         
-        // Convert string ID to TheaterId
-        let theater_id = TheaterId::from_string(actor_id)?;
+        // Get the actor state
+        let state_result = self.theater_client.get_actor_state(actor_id).await?;
         
-        let state = self.theater_client.get_actor_state(&theater_id).await?;
-        
-        // Convert binary state to JSON if possible
-        let content = if let Some(state_bytes) = state {
-            match serde_json::from_slice(&state_bytes) {
+        // Process the state
+        let content = if let Some(state_bytes) = state_result {
+            // Try to parse the binary data as JSON
+            match serde_json::from_slice::<serde_json::Value>(&state_bytes) {
                 Ok(json_value) => json_value,
                 Err(_) => {
-                    // If not valid JSON, just return empty object with base64 encoded state
-                    let base64_state = base64::encode(&state_bytes);
+                    // If not valid JSON, encode as base64
+                    let base64_str = BASE64.encode(&state_bytes);
                     json!({
-                        "_raw_state_base64": base64_state
+                        "_raw_state_base64": base64_str
                     })
                 }
             }
         } else {
+            // No state, return empty object
             json!({})
         };
         
+        // Create the resource content
         Ok(ResourceContent {
             uri: format!("theater://actor/{}/state", actor_id),
             mime_type: "application/json".to_string(),

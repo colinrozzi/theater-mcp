@@ -35,16 +35,16 @@ pub type ChainEvent = TheaterChainEvent;
 
 /// Types for converting between string IDs and Theater IDs
 pub trait TheaterIdExt {
-    fn to_string(&self) -> String;
-    fn from_string(s: &str) -> Result<TheaterId, anyhow::Error>;
+    fn as_string(&self) -> String;
+    fn from_str(s: &str) -> Result<TheaterId, anyhow::Error>;
 }
 
 impl TheaterIdExt for TheaterId {
-    fn to_string(&self) -> String {
-        self.to_string()
+    fn as_string(&self) -> String {
+        format!("{}", self) // Use explicit formatting to avoid method conflict
     }
     
-    fn from_string(s: &str) -> Result<TheaterId, anyhow::Error> {
-        TheaterId::try_from(s).map_err(|e| anyhow::anyhow!("Invalid Theater ID: {}", e))
+    fn from_str(s: &str) -> Result<TheaterId, anyhow::Error> {
+        TheaterId::parse(s).map_err(|e| anyhow::anyhow!("Invalid Theater ID: {}", e))
     }
 }

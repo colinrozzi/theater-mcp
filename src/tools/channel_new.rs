@@ -1,13 +1,11 @@
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use mcp_protocol::types::tool::{ToolCallResult, ToolContent};
+use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use theater::id::TheaterId;
-use theater::messages::ChannelParticipant;
 use crate::theater::client::TheaterClient;
-use crate::theater::types::TheaterIdExt;
+use crate::tools::utils::register_async_tool;
 
 pub struct ChannelTools {
     theater_client: Arc<TheaterClient>,
@@ -20,7 +18,7 @@ impl ChannelTools {
     
     pub async fn open_channel(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
-        let actor_id_str = args["actor_id"].as_str()
+        let actor_id = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
             
         // Extract optional initial message
@@ -37,18 +35,20 @@ impl ChannelTools {
         
         // Open the channel
         let channel_id = match initial_message {
-            Some(msg) => self.theater_client.open_channel(actor_id_str, Some(&msg)).await?,
-            None => self.theater_client.open_channel(actor_id_str, None).await?,
+            Some(msg) => self.theater_client.open_channel(actor_id, Some(&msg)).await?,
+            None => self.theater_client.open_channel(actor_id, None).await?,
         };
         
         // Create result
+        let result_json = json!({
+            "channel_id": channel_id,
+            "actor_id": actor_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "channel_id": channel_id,
-                        "actor_id": actor_id_str
-                    })
+                ToolContent::Text { 
+                    text: serde_json::to_string(&result_json)? 
                 }
             ],
             is_error: Some(false),
@@ -71,13 +71,15 @@ impl ChannelTools {
         self.theater_client.send_on_channel(channel_id, &message_data).await?;
         
         // Create result
+        let result_json = json!({
+            "success": true,
+            "channel_id": channel_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "success": true,
-                        "channel_id": channel_id
-                    })
+                ToolContent::Text { 
+                    text: serde_json::to_string(&result_json)? 
                 }
             ],
             is_error: Some(false),
@@ -93,13 +95,15 @@ impl ChannelTools {
         self.theater_client.close_channel(channel_id).await?;
         
         // Create result
+        let result_json = json!({
+            "success": true,
+            "channel_id": channel_id
+        });
+        
         Ok(ToolCallResult {
             content: vec![
-                ToolContent::Json {
-                    json: json!({
-                        "success": true,
-                        "channel_id": channel_id
-                    })
+                ToolContent::Text { 
+                    text: serde_json::to_string(&result_json)? 
                 }
             ],
             is_error: Some(false),
@@ -112,10 +116,10 @@ impl ChannelTools {
         tool_manager: &Arc<mcp_server::tools::ToolManager>,
     ) {
         // Register the open_channel tool
-        tool_manager.register_tool(
-            "open_channel",
-            "Open a communication channel to an actor",
-            json!({
+        let open_channel_tool = Tool {
+            name: "open_channel".to_string(),
+            description: Some("Open a communication channel to an actor".to_string()),
+            input_schema: json!({
                 "type": "object",
                 "properties": {
                     "actor_id": {
@@ -129,19 +133,26 @@ impl ChannelTools {
                 },
                 "required": ["actor_id"]
             }),
+            annotations: None,
+        };
+        
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            open_channel_tool,
             move |args| {
-                let tools_self = self.clone();
-                Box::pin(async move {
+                let tools_self = tools_self.clone();
+                async move {
                     tools_self.open_channel(args).await
-                })
+                }
             },
         );
         
         // Register the send_on_channel tool
-        tool_manager.register_tool(
-            "send_on_channel",
-            "Send a message on an open channel",
-            json!({
+        let send_on_channel_tool = Tool {
+            name: "send_on_channel".to_string(),
+            description: Some("Send a message on an open channel".to_string()),
+            input_schema: json!({
                 "type": "object",
                 "properties": {
                     "channel_id": {
@@ -155,19 +166,26 @@ impl ChannelTools {
                 },
                 "required": ["channel_id", "message"]
             }),
+            annotations: None,
+        };
+        
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            send_on_channel_tool,
             move |args| {
-                let tools_self = self.clone();
-                Box::pin(async move {
+                let tools_self = tools_self.clone();
+                async move {
                     tools_self.send_on_channel(args).await
-                })
+                }
             },
         );
         
         // Register the close_channel tool
-        tool_manager.register_tool(
-            "close_channel",
-            "Close an open channel",
-            json!({
+        let close_channel_tool = Tool {
+            name: "close_channel".to_string(),
+            description: Some("Close an open channel".to_string()),
+            input_schema: json!({
                 "type": "object",
                 "properties": {
                     "channel_id": {
@@ -177,11 +195,18 @@ impl ChannelTools {
                 },
                 "required": ["channel_id"]
             }),
+            annotations: None,
+        };
+        
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            close_channel_tool,
             move |args| {
-                let tools_self = self.clone();
-                Box::pin(async move {
+                let tools_self = tools_self.clone();
+                async move {
                     tools_self.close_channel(args).await
-                })
+                }
             },
         );
     }

@@ -192,7 +192,9 @@ impl TheaterClient {
         actor_id: &str,
         initial_message: Option<&[u8]>,
     ) -> Result<String> {
-        let actor_participant = ChannelParticipant::Actor(TheaterId::from_string(actor_id)?);
+        // Parse actor ID string to TheaterId
+        let actor_id = TheaterId::parse(actor_id)?;
+        let actor_participant = ChannelParticipant::Actor(actor_id);
         let initial_data = initial_message.map(|m| m.to_vec()).unwrap_or_default();
         
         let command = ManagementCommand::OpenChannel {

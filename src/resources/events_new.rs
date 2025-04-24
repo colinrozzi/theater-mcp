@@ -4,9 +4,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::debug;
 
-use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
-use crate::theater::types::TheaterIdExt;
 
 /// Resources for accessing Theater events
 pub struct EventResources {
@@ -23,12 +21,8 @@ impl EventResources {
     pub async fn get_actor_events_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting events for actor {}", actor_id);
         
-        // Convert string ID to TheaterId
-        let theater_id = TheaterId::from_string(actor_id)?;
+        let events = self.theater_client.get_actor_events(actor_id).await?;
         
-        let events = self.theater_client.get_actor_events(&theater_id).await?;
-        
-        // The events will already be properly serializable thanks to Theater's implementation
         // Return the events as JSON
         Ok(ResourceContent {
             uri: format!("theater://events/{}", actor_id),

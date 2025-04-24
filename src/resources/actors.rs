@@ -6,6 +6,7 @@ use tracing::debug;
 use tokio::runtime::Handle;
 use tokio::task;
 use std::future::Future;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::theater::client::TheaterClient;
 
@@ -76,11 +77,23 @@ impl ActorResources {
     /// Get resource content for an actor's state
     pub async fn get_actor_state_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor state for {}", actor_id);
-        let state = self.theater_client.get_actor_state(actor_id).await?;
+        let state_result = self.theater_client.get_actor_state(actor_id).await?;
         
-        let content = if let Some(state_value) = state {
-            state_value
+        // Convert binary state to JSON if possible
+        let content = if let Some(state_bytes) = state_result {
+            // Try to parse as JSON
+            match serde_json::from_slice::<serde_json::Value>(&state_bytes) {
+                Ok(json_value) => json_value,
+                Err(_) => {
+                    // If not valid JSON, encode as base64
+                    let base64_str = BASE64.encode(&state_bytes);
+                    json!({
+                        "_raw_state_base64": base64_str
+                    })
+                }
+            }
         } else {
+            // No state, return empty object
             json!({})
         };
         
