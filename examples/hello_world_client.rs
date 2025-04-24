@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
     let actor_details_msg: JsonRpcMessage = JsonRpcMessage::Request {
         jsonrpc: "2.0".to_string(),
         id: "5a".into(),
-        method: "resources/content".to_string(),
+        method: "resources/get".to_string(),
         params: Some(json!({
             "uri": format!("theater://actor/{}", actor_id)
         })),

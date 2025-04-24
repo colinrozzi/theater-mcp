@@ -3,6 +3,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use theater::theater_server::ManagementCommand;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -29,7 +30,7 @@ impl TheaterClient {
     }
 
     /// Send a command to the Theater server and receive a response
-    async fn send_command(&self, command: Value) -> Result<Value> {
+    async fn send_command(&self, command: ManagementCommand) -> Result<Value> {
         // Create message frame
         let message = serde_json::to_vec(&command)?;
         let len = message.len() as u32;
@@ -74,9 +75,7 @@ impl TheaterClient {
     /// List all running actors
     pub async fn list_actors(&self) -> Result<Vec<String>> {
         // In this version, the key is just the command name without the method/id structure
-        let command = json!({
-            "ListActors": {}
-        });
+        let command = theater::theater_server::ManagementCommand::ListActors;
 
         let response = self.send_command(command).await?;
 
@@ -231,9 +230,10 @@ impl TheaterClient {
 
         let command = json!({
             "SendActorMessage": {
-                "actor_id": actor_id,
+                "id": actor_id,
                 "data": data_array
-            }
+            },
+            "id": Uuid::new_v4().to_string()
         });
 
         let _response = self.send_command(command).await?;
@@ -253,9 +253,10 @@ impl TheaterClient {
 
         let command = json!({
             "RequestActorMessage": {
-                "actor_id": actor_id,
+                "id": actor_id,
                 "data": data_array
-            }
+            },
+            "id": Uuid::new_v4().to_string()
         });
 
         let response = self.send_command(command).await?;
@@ -308,9 +309,10 @@ impl TheaterClient {
 
         let command = json!({
             "OpenChannel": {
-                "actor_id": actor_id,
+                "id": actor_id,
                 "initial_message": initial_data
-            }
+            },
+            "id": Uuid::new_v4().to_string()
         });
 
         let response = self.send_command(command).await?;
@@ -340,7 +342,8 @@ impl TheaterClient {
             "SendOnChannel": {
                 "channel_id": channel_id,
                 "message": message_array
-            }
+            },
+            "id": Uuid::new_v4().to_string()
         });
 
         let _response = self.send_command(command).await?;
@@ -352,7 +355,8 @@ impl TheaterClient {
         let command = json!({
             "CloseChannel": {
                 "channel_id": channel_id
-            }
+            },
+            "id": Uuid::new_v4().to_string()
         });
 
         let _response = self.send_command(command).await?;
