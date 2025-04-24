@@ -8,7 +8,9 @@ use tokio::task;
 use std::future::Future;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
+use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
+use crate::theater::TheaterIdExt;
 
 /// Resources for accessing Theater actors
 pub struct ActorResources {
@@ -28,10 +30,10 @@ impl ActorResources {
         
         let actors = actor_ids.iter().map(|id| {
             json!({
-                "id": id,
+                "id": id.as_string(),
                 "name": format!("Actor {}", id),
                 "status": "RUNNING",
-                "uri": format!("theater://actor/{}", id)
+                "uri": format!("theater://actor/{}", id.as_string())
             })
         }).collect::<Vec<_>>();
         
@@ -52,8 +54,11 @@ impl ActorResources {
     pub async fn get_actor_details_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor details for {}", actor_id);
         
+        // Convert string ID to TheaterId
+        let theater_id = TheaterId::from_str(actor_id)?;
+        
         // Attempt to get the actor state to verify it exists
-        if let Err(e) = self.theater_client.get_actor_state(actor_id).await {
+        if let Err(e) = self.theater_client.get_actor_state(&theater_id).await {
             debug!("Failed to get actor state: {}", e);
             return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
         }
@@ -78,8 +83,11 @@ impl ActorResources {
     pub async fn get_actor_state_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting actor state for {}", actor_id);
         
+        // Convert string ID to TheaterId
+        let theater_id = TheaterId::from_str(actor_id)?;
+        
         // Get the actor state
-        let state_result = self.theater_client.get_actor_state(actor_id).await?;
+        let state_result = self.theater_client.get_actor_state(&theater_id).await?;
         
         // Process the state
         let content = if let Some(state_bytes) = state_result {

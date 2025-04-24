@@ -4,7 +4,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::error;
 
+use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
+use crate::theater::TheaterIdExt;
 use crate::tools::utils::register_async_tool;
 
 pub struct ActorTools {
@@ -52,7 +54,7 @@ impl ActorTools {
         
         // Create result
         let result_json = json!({
-            "actor_id": actor_id,
+            "actor_id": actor_id.as_string(),
             "status": "RUNNING"
         });
         
@@ -70,9 +72,12 @@ impl ActorTools {
         // Extract actor ID
         let actor_id_str = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+         
+        // Convert to TheaterId
+        let theater_id = TheaterId::from_str(actor_id_str)?;
             
         // Stop the actor
-        self.theater_client.stop_actor(actor_id_str).await?;
+        self.theater_client.stop_actor(&theater_id).await?;
         
         // Create result
         let result_json = json!({
@@ -95,8 +100,11 @@ impl ActorTools {
         let actor_id_str = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
             
+        // Convert to TheaterId
+        let theater_id = TheaterId::from_str(actor_id_str)?;
+            
         // Restart the actor
-        self.theater_client.restart_actor(actor_id_str).await?;
+        self.theater_client.restart_actor(&theater_id).await?;
         
         // Create result
         let result_json = json!({

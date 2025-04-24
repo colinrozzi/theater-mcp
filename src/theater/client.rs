@@ -14,6 +14,7 @@ use theater::chain::ChainEvent;
 use crate::theater::types::TheaterError;
 
 /// Client for connecting to and interacting with a Theater server
+#[derive(Debug)]
 pub struct TheaterClient {
     connection: Arc<Mutex<TcpStream>>,
 }

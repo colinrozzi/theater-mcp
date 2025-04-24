@@ -4,7 +4,9 @@ use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
+use crate::theater::TheaterIdExt;
 use crate::tools::utils::register_async_tool;
 
 pub struct MessageTools {
@@ -21,6 +23,9 @@ impl MessageTools {
         let actor_id_str = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
             
+        // Convert to TheaterId
+        let theater_id = TheaterId::from_str(actor_id_str)?;
+            
         // Extract message data
         let data_b64 = args["data"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing data parameter"))?;
@@ -29,7 +34,7 @@ impl MessageTools {
         let data = BASE64.decode(data_b64)?;
         
         // Send the message
-        self.theater_client.send_message(actor_id_str, &data).await?;
+        self.theater_client.send_message(&theater_id, &data).await?;
         
         // Create result
         let result_json = json!({
@@ -52,6 +57,9 @@ impl MessageTools {
         let actor_id_str = args["actor_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
             
+        // Convert to TheaterId
+        let theater_id = TheaterId::from_str(actor_id_str)?;
+            
         // Extract request data
         let data_b64 = args["data"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing data parameter"))?;
@@ -60,7 +68,7 @@ impl MessageTools {
         let data = BASE64.decode(data_b64)?;
         
         // Send the request and get response
-        let response_data = self.theater_client.request_message(actor_id_str, &data).await?;
+        let response_data = self.theater_client.request_message(&theater_id, &data).await?;
         
         // Encode response data
         let response_b64 = BASE64.encode(&response_data);
