@@ -11,4 +11,4 @@ echo "Building the hello-world client..."
 cargo build --example hello_world_client
 
 echo "Running the hello-world client test..."
-cargo run --example hello_world_client
+RUST_BACKTRACE=1 cargo run --example hello_world_client

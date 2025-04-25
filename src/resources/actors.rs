@@ -162,28 +162,43 @@ impl ActorResources {
         
         let self_clone = self.clone();
         let details_actor_id = actor_id.clone();
+        // Create a safe content provider that won't block the current async context
+        let client = self_clone.theater_client.clone();
+        let aid = details_actor_id.clone();
+        let self_ref = self_clone.clone();
+        
+        // Use a thread-safe channel to communicate between threads
         resource_manager.register_resource(
             actor_details_resource,
             move || {
-                let client = self_clone.theater_client.clone();
-                let aid = details_actor_id.clone();
-                let self_ref = self_clone.clone();
+                // Clone for the thread
+                let self_ref = self_ref.clone();
+                let aid = aid.clone();
                 
-                // Create a static function to avoid lifetime issues
-                let fut = async move {
-                    let content = self_ref.get_actor_details_content(&aid).await?;
-                    Ok(vec![content])
-                };
+                // Use a thread to avoid blocking the Tokio runtime
+                let (tx, rx) = std::sync::mpsc::channel();
                 
-                // Run the future synchronously
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => handle.block_on(fut),
-                    Err(_) => {
-                        // We're not in a tokio runtime, create one
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(fut)
-                    }
-                }
+                // Spawn a new thread to run the future
+                std::thread::spawn(move || {
+                    // Create a new runtime for this thread only
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    
+                    // Run the async code in this isolated runtime
+                    let result = rt.block_on(async {
+                        self_ref.get_actor_details_content(&aid).await
+                    });
+                    
+                    // Send the result back to the main thread
+                    let _ = tx.send(result.map(|content| vec![content]));
+                });
+                
+                // Receive the result - this is a blocking operation but we're not in an async context here
+                rx.recv().unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!("Failed to get actor details: {}", e))
+                })
             },
         );
         
@@ -199,27 +214,41 @@ impl ActorResources {
         
         let self_clone = self.clone();
         let state_actor_id = actor_id.clone();
+        // Create a safe content provider that won't block the current async context
+        let aid = state_actor_id.clone();
+        let self_ref = self_clone.clone();
+        
         resource_manager.register_resource(
             actor_state_resource,
             move || {
-                let aid = state_actor_id.clone();
-                let self_ref = self_clone.clone();
+                // Clone for the thread
+                let self_ref = self_ref.clone();
+                let aid = aid.clone();
                 
-                // Create a static function to avoid lifetime issues
-                let fut = async move {
-                    let content = self_ref.get_actor_state_content(&aid).await?;
-                    Ok(vec![content])
-                };
+                // Use a thread-safe channel to communicate between threads
+                let (tx, rx) = std::sync::mpsc::channel();
                 
-                // Run the future synchronously
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => handle.block_on(fut),
-                    Err(_) => {
-                        // We're not in a tokio runtime, create one
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(fut)
-                    }
-                }
+                // Spawn a new thread to run the future
+                std::thread::spawn(move || {
+                    // Create a new runtime for this thread only
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    
+                    // Run the async code in this isolated runtime
+                    let result = rt.block_on(async {
+                        self_ref.get_actor_state_content(&aid).await
+                    });
+                    
+                    // Send the result back to the main thread
+                    let _ = tx.send(result.map(|content| vec![content]));
+                });
+                
+                // Receive the result - this is a blocking operation but we're not in an async context here
+                rx.recv().unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!("Failed to get actor state: {}", e))
+                })
             },
         );
         
@@ -242,26 +271,39 @@ impl ActorResources {
         };
         
         let self_clone = self.clone();
+        // Create a safe content provider that won't block the current async context
+        let self_ref = self_clone.clone();
+        
         resource_manager.register_resource(
             actors_list_resource,
             move || {
-                let self_ref = self_clone.clone();
+                // Clone for the thread
+                let self_ref = self_ref.clone();
                 
-                // Create a static function to avoid lifetime issues
-                let fut = async move {
-                    let content = self_ref.get_actors_list_content().await?;
-                    Ok(vec![content])
-                };
+                // Use a thread-safe channel to communicate between threads
+                let (tx, rx) = std::sync::mpsc::channel();
                 
-                // Run the future synchronously
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => handle.block_on(fut),
-                    Err(_) => {
-                        // We're not in a tokio runtime, create one
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(fut)
-                    }
-                }
+                // Spawn a new thread to run the future
+                std::thread::spawn(move || {
+                    // Create a new runtime for this thread only
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    
+                    // Run the async code in this isolated runtime
+                    let result = rt.block_on(async {
+                        self_ref.get_actors_list_content().await
+                    });
+                    
+                    // Send the result back to the main thread
+                    let _ = tx.send(result.map(|content| vec![content]));
+                });
+                
+                // Receive the result - this is a blocking operation but we're not in an async context here
+                rx.recv().unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!("Failed to get actors list: {}", e))
+                })
             },
         );
     }

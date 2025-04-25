@@ -86,29 +86,44 @@ impl EventResources {
         
         let events_self = self.clone();
         let events_actor_id = actor_id.clone();
+        // Create a safe content provider that won't block the current async context
+        let self_ref = events_self.clone();
+        let aid = events_actor_id.clone();
+        
         resource_manager.register_resource(
             events_resource,
             move || {
-                let self_ref = events_self.clone();
-                let aid = events_actor_id.clone();
+                // Clone for the thread
+                let self_ref = self_ref.clone();
+                let aid = aid.clone();
                 
-                // Create a static function to avoid lifetime issues
-                let fut = async move {
-                    let content = self_ref.get_actor_events_content(&aid).await?;
-                    Ok(vec![content])
-                };
+                // Use a thread-safe channel to communicate between threads
+                let (tx, rx) = std::sync::mpsc::channel();
                 
-                // Run the future synchronously
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => handle.block_on(fut),
-                    Err(_) => {
-                        // We're not in a tokio runtime, create one
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(fut)
-                    }
-                }
+                // Spawn a new thread to run the future
+                std::thread::spawn(move || {
+                    // Create a new runtime for this thread only
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    
+                    // Run the async code in this isolated runtime
+                    let result = rt.block_on(async {
+                        self_ref.get_actor_events_content(&aid).await
+                    });
+                    
+                    // Send the result back to the main thread
+                    let _ = tx.send(result.map(|content| vec![content]));
+                });
+                
+                // Receive the result - this is a blocking operation but we're not in an async context here
+                rx.recv().unwrap_or_else(|e| {
+                    Err(anyhow::anyhow!("Failed to get actor events: {}", e))
+                })
             }
         );
+
         
         Ok(())
     }
