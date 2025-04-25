@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
@@ -13,7 +13,9 @@ use crate::tools::utils::register_async_tool;
 pub struct MessageTools {
     theater_client: Arc<TheaterClient>,
 }
+
 impl MessageTools {
+    pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
     }
     
@@ -27,7 +29,7 @@ impl MessageTools {
                    error_msg.contains("read") || error_msg.contains("write") {
                     // This is likely a connection issue
                     warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
-                    Err(anyhow::anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                    Err(anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
                 } else {
                     // Other type of error
                     Err(e)
@@ -39,14 +41,14 @@ impl MessageTools {
     pub async fn send_message(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
         let actor_id_str = args["actor_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing actor_id parameter"))?;
             
         // Convert to TheaterId
         let theater_id = TheaterId::from_str(actor_id_str)?;
             
         // Extract message data
         let data_b64 = args["data"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing data parameter"))?;
+            .ok_or_else(|| anyhow!("Missing data parameter"))?;
             
         // Decode message data
         let data = BASE64.decode(data_b64)?;
@@ -76,14 +78,14 @@ impl MessageTools {
     pub async fn request_message(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
         let actor_id_str = args["actor_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing actor_id parameter"))?;
             
         // Convert to TheaterId
         let theater_id = TheaterId::from_str(actor_id_str)?;
             
         // Extract request data
         let data_b64 = args["data"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing data parameter"))?;
+            .ok_or_else(|| anyhow!("Missing data parameter"))?;
             
         // Decode request data
         let data = BASE64.decode(data_b64)?;

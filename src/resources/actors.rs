@@ -1,11 +1,8 @@
-use anyhow::Result;
-use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate};
+use anyhow::{anyhow, Result};
+use mcp_protocol::types::resource::{Resource, ResourceContent};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, warn};
-use tokio::runtime::Handle;
-use tokio::task;
-use std::future::Future;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use theater::id::TheaterId;
@@ -18,9 +15,6 @@ pub struct ActorResources {
 }
 
 impl ActorResources {
-    /// Create a new actor resources instance
-    pub fn new(theater_client: Arc<TheaterClient>) -> Self {
-        Self { theater_client }
     /// Create a new actor resources instance
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
@@ -44,6 +38,11 @@ impl ActorResources {
             }
         }
     }
+    
+    /// Get resource content for the actor list
+    pub async fn get_actors_list_content(&self) -> Result<ResourceContent> {
+        debug!("Getting actor list content");
+        
         // Get actors with connection error handling
         let actor_ids = self.handle_connection_error(
             self.theater_client.list_actors().await,
@@ -85,7 +84,7 @@ impl ActorResources {
             &format!("actor details retrieval for {}", actor_id)
         ) {
             debug!("Failed to get actor state: {}", e);
-            return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
+            return Err(anyhow!("Actor not found or connection issue: {}", actor_id));
         }
         
         let content = json!({
@@ -131,11 +130,12 @@ impl ActorResources {
                 }
             }
         } else {
-            // No state, return empty object
-            json!({})
+            // No state available
+            json!({
+                "_state": "empty"
+            })
         };
         
-        // Create the resource content
         Ok(ResourceContent {
             uri: format!("theater://actor/{}/state", actor_id),
             mime_type: "application/json".to_string(),
@@ -144,152 +144,125 @@ impl ActorResources {
         })
     }
     
-    // Helper function to spawn an async task that can be used in sync callbacks
-    pub fn spawn_blocking<F, Fut, T>(f: F) -> Result<T>
-    where
-        F: FnOnce() -> Fut + Send + 'static,
-        Fut: Future<Output = Result<T>> + Send + 'static,
-        T: Send + 'static,
-    {
-        match Handle::try_current() {
-            Ok(_handle) => {
-                // We're already in a tokio runtime, use spawn_blocking
-                match task::block_in_place(|| {
-                    let rt = Handle::current();
-                    rt.block_on(f())
-                }) {
-                    Ok(result) => Ok(result), // Wrap the result in Ok
-                    Err(e) => Err(anyhow::anyhow!("Task execution error: {}", e)),
-                }
-            },
-            Err(_) => {
-                // No runtime, this is unexpected but try a direct approach
-                Err(anyhow::anyhow!("No Tokio runtime available"))
-            }
-        }
-    }
-    
-    /// Register a specific actor's resources
-    pub fn register_actor_resources(
+    /// Register actor resources with the MCP resource manager
+    pub async fn register_actor_resources(
         self: Arc<Self>,
         actor_id: String,
         resource_manager: Arc<mcp_server::resources::ResourceManager>,
-    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
-        let self_clone = self.clone();
-        
-        async move {
-            // Convert string ID to TheaterId
-            let theater_id = TheaterId::from_str(&actor_id)?;
-            
-            // Check if actor exists
-            if !self_clone.theater_client.actor_exists(&theater_id).await? {
-                return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
-            }
-        
-            // Register actor details resource
-            let actor_details_resource = Resource {
-                uri: format!("theater://actor/{}", actor_id),
-                name: format!("Actor {}", actor_id),
-                description: Some("Detailed information about a specific actor".to_string()),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                annotations: None,
-            };
-            
-            let details_self = self_clone.clone();
-            let details_actor_id = actor_id.clone();
-            resource_manager.register_resource(actor_details_resource, move || {
-                let details_self = details_self.clone();
-                let aid = details_actor_id.clone();
-                
-                Self::spawn_blocking(move || async move {
-                    let content = details_self.get_actor_details_content(&aid).await?;
-                    Ok(vec![content])
-                })
-            });
-        
-            // Register actor state resource
-            let actor_state_resource = Resource {
-                uri: format!("theater://actor/{}/state", actor_id),
-                name: format!("Actor {} State", actor_id),
-                description: Some("Current state of a specific actor".to_string()),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                annotations: None,
-            };
-            
-            let state_self = self_clone.clone();
-            let state_actor_id = actor_id.clone();
-            resource_manager.register_resource(actor_state_resource, move || {
-                let state_self = state_self.clone();
-                let aid = state_actor_id.clone();
-                
-                Self::spawn_blocking(move || async move {
-                    let content = state_self.get_actor_state_content(&aid).await?;
-                    Ok(vec![content])
-                })
-            });
-            
-            Ok(())
-        }
-    }
-    
-    /// Register actor resources with the MCP resource manager
-    pub fn register_resources(
-        self: Arc<Self>,
-        resource_manager: &Arc<mcp_server::resources::ResourceManager>,
-    ) {
-        // Register the actor list resource
-        let actors_list_resource = Resource {
-            uri: "theater://actors".to_string(),
-            name: "Theater Actors".to_string(),
-            description: Some("List of all running actors in the Theater system".to_string()),
+    ) -> Result<()> {
+        // Actor details resource
+        let actor_details_resource = Resource {
+            uri: format!("theater://actor/{}", actor_id),
+            name: format!("Actor {}", actor_id),
+            description: Some(format!("Details for actor {}", actor_id)),
             mime_type: Some("application/json".to_string()),
             size: None,
             annotations: None,
         };
         
-        let actors_self = self.clone();
-        resource_manager.register_resource(actors_list_resource, move || {
-            let actors_self = actors_self.clone();
-            
-            Self::spawn_blocking(move || async move {
-                let content = actors_self.get_actors_list_content().await?;
-                Ok(vec![content])
-            })
-        });
+        let self_clone = self.clone();
+        let details_actor_id = actor_id.clone();
+        resource_manager.register_resource(
+            actor_details_resource,
+            move || {
+                let client = self_clone.theater_client.clone();
+                let aid = details_actor_id.clone();
+                let self_ref = self_clone.clone();
+                
+                // Create a static function to avoid lifetime issues
+                let fut = async move {
+                    let content = self_ref.get_actor_details_content(&aid).await?;
+                    Ok(vec![content])
+                };
+                
+                // Run the future synchronously
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => handle.block_on(fut),
+                    Err(_) => {
+                        // We're not in a tokio runtime, create one
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(fut)
+                    }
+                }
+            },
+        );
         
-        // Register the actor details resource template
-        let actor_details_template = ResourceTemplate {
-            uri_template: "theater://actor/{actor_id}".to_string(),
-            name: "Actor Details".to_string(),
-            description: Some("Detailed information about a specific actor".to_string()),
+        // Actor state resource
+        let actor_state_resource = Resource {
+            uri: format!("theater://actor/{}/state", actor_id),
+            name: format!("Actor {} State", actor_id),
+            description: Some(format!("Current state for actor {}", actor_id)),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         };
         
-        resource_manager.register_template(actor_details_template, move |uri, _params| {
-            // We just need to return the expanded URI here,
-            // the content will be fetched through a separate mechanism
-            Ok(uri)
-        });
+        let self_clone = self.clone();
+        let state_actor_id = actor_id.clone();
+        resource_manager.register_resource(
+            actor_state_resource,
+            move || {
+                let aid = state_actor_id.clone();
+                let self_ref = self_clone.clone();
+                
+                // Create a static function to avoid lifetime issues
+                let fut = async move {
+                    let content = self_ref.get_actor_state_content(&aid).await?;
+                    Ok(vec![content])
+                };
+                
+                // Run the future synchronously
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => handle.block_on(fut),
+                    Err(_) => {
+                        // We're not in a tokio runtime, create one
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(fut)
+                    }
+                }
+            },
+        );
         
-
-        
-        // Register the actor state resource template
-        let actor_state_template = ResourceTemplate {
-            uri_template: "theater://actor/{actor_id}/state".to_string(),
-            name: "Actor State".to_string(),
-            description: Some("Current state of a specific actor".to_string()),
+        Ok(())
+    }
+    
+    /// Register resources with the MCP resource manager
+    pub fn register_resources(
+        self: Arc<Self>,
+        resource_manager: &Arc<mcp_server::resources::ResourceManager>,
+    ) {
+        // Register the actors list resource
+        let actors_list_resource = Resource {
+            uri: "theater://actors".to_string(),
+            name: "Theater Actors".to_string(),
+            description: Some("List of actors in the Theater system".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         };
         
-        resource_manager.register_template(actor_state_template, move |uri, _params| {
-            // We just need to return the expanded URI here
-            Ok(uri)
-        });
-        
-
+        let self_clone = self.clone();
+        resource_manager.register_resource(
+            actors_list_resource,
+            move || {
+                let self_ref = self_clone.clone();
+                
+                // Create a static function to avoid lifetime issues
+                let fut = async move {
+                    let content = self_ref.get_actors_list_content().await?;
+                    Ok(vec![content])
+                };
+                
+                // Run the future synchronously
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => handle.block_on(fut),
+                    Err(_) => {
+                        // We're not in a tokio runtime, create one
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(fut)
+                    }
+                }
+            },
+        );
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate};
 use serde_json::json;
 use std::sync::Arc;
@@ -37,6 +37,7 @@ impl EventResources {
             }
         }
     }
+    
     /// Get resource content for an actor's events
     pub async fn get_actor_events_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting events for actor {}", actor_id);
@@ -60,47 +61,56 @@ impl EventResources {
     }
     
     /// Register a specific actor's event resources
-    pub fn register_actor_events(
+    pub async fn register_actor_events(
         self: Arc<Self>,
         actor_id: String,
         resource_manager: Arc<mcp_server::resources::ResourceManager>,
-    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
-        let self_clone = self.clone();
+    ) -> Result<()> {
+        // Convert string ID to TheaterId
+        let theater_id = TheaterId::from_str(&actor_id)?;
         
-        async move {
-            // Convert string ID to TheaterId
-            let theater_id = TheaterId::from_str(&actor_id)?;
-            
-            // Check if actor exists (borrow actor existence check from TheaterClient)
-            if !self_clone.theater_client.actor_exists(&theater_id).await? {
-                return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
-            }
-            
-            // Register actor events resource
-            let events_resource = Resource {
-                uri: format!("theater://events/{}", actor_id),
-                name: format!("Actor {} Events", actor_id),
-                description: Some("Event history for a specific actor".to_string()),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                annotations: None,
-            };
-            
-            let events_self = self_clone.clone();
-            let events_actor_id = actor_id.clone();
-            resource_manager.register_resource(events_resource, move || {
-                let events_self = events_self.clone();
+        // Check if actor exists
+        if !self.theater_client.actor_exists(&theater_id).await? {
+            return Err(anyhow!("Actor not found: {}", actor_id));
+        }
+        
+        // Register actor events resource
+        let events_resource = Resource {
+            uri: format!("theater://events/{}", actor_id),
+            name: format!("Actor {} Events", actor_id),
+            description: Some("Event history for a specific actor".to_string()),
+            mime_type: Some("application/json".to_string()),
+            size: None,
+            annotations: None,
+        };
+        
+        let events_self = self.clone();
+        let events_actor_id = actor_id.clone();
+        resource_manager.register_resource(
+            events_resource,
+            move || {
+                let self_ref = events_self.clone();
                 let aid = events_actor_id.clone();
                 
-                // Use spawn_blocking from ActorResources
-                crate::resources::actors::ActorResources::spawn_blocking(move || async move {
-                    let content = events_self.get_actor_events_content(&aid).await?;
+                // Create a static function to avoid lifetime issues
+                let fut = async move {
+                    let content = self_ref.get_actor_events_content(&aid).await?;
                     Ok(vec![content])
-                })
-            });
-            
-            Ok(())
-        }
+                };
+                
+                // Run the future synchronously
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => handle.block_on(fut),
+                    Err(_) => {
+                        // We're not in a tokio runtime, create one
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(fut)
+                    }
+                }
+            }
+        );
+        
+        Ok(())
     }
 
     /// Register event resources with the MCP resource manager
@@ -121,7 +131,5 @@ impl EventResources {
             // We just need to return the expanded URI here
             Ok(uri)
         });
-        
-
     }
 }

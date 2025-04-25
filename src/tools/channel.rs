@@ -1,15 +1,17 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use mcp_protocol::types::tool::{ToolCallResult, ToolContent};
+use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::warn;
 
 use crate::theater::client::TheaterClient;
+use crate::tools::utils::register_async_tool;
 
 pub struct ChannelTools {
     theater_client: Arc<TheaterClient>,
 }
+
 impl ChannelTools {
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
@@ -25,7 +27,7 @@ impl ChannelTools {
                    error_msg.contains("read") || error_msg.contains("write") {
                     // This is likely a connection issue
                     warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
-                    Err(anyhow::anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                    Err(anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
                 } else {
                     // Other type of error
                     Err(e)
@@ -33,12 +35,11 @@ impl ChannelTools {
             }
         }
     }
-    }
     
     pub async fn open_channel(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
         let actor_id = args["actor_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing actor_id parameter"))?;
             
         // Extract optional initial message
         let initial_message = if let Some(msg) = args.get("initial_message") {
@@ -83,11 +84,11 @@ impl ChannelTools {
     pub async fn send_on_channel(&self, args: Value) -> Result<ToolCallResult> {
         // Extract channel ID
         let channel_id = args["channel_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing channel_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing channel_id parameter"))?;
             
         // Extract message data
         let message_b64 = args["message"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing message parameter"))?;
+            .ok_or_else(|| anyhow!("Missing message parameter"))?;
             
         // Decode message data
         let message = BASE64.decode(message_b64)?;
@@ -117,7 +118,7 @@ impl ChannelTools {
     pub async fn close_channel(&self, args: Value) -> Result<ToolCallResult> {
         // Extract channel ID
         let channel_id = args["channel_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing channel_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing channel_id parameter"))?;
             
         // Close the channel with connection error handling
         self.handle_connection_error(
@@ -141,11 +142,13 @@ impl ChannelTools {
         })
     }
     
-    pub fn register_tools(self: Arc<Self>, tool_manager: &Arc<mcp_server::tools::ToolManager>) {
-        use crate::tools::utils::register_async_tool;
-        
+    /// Register the tools with the MCP tool manager
+    pub fn register_tools(
+        self: Arc<Self>,
+        tool_manager: &Arc<mcp_server::tools::ToolManager>,
+    ) {
         // Register the open_channel tool
-        let open_channel_tool = mcp_protocol::types::tool::Tool {
+        let open_channel_tool = Tool {
             name: "open_channel".to_string(),
             description: Some("Open a communication channel to an actor".to_string()),
             input_schema: json!({
@@ -165,16 +168,20 @@ impl ChannelTools {
             annotations: None,
         };
         
-        let channel_self = self.clone();
-        register_async_tool(tool_manager, open_channel_tool, move |args| {
-            let channel_self = channel_self.clone();
-            async move {
-                channel_self.open_channel(args).await
-            }
-        });
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            open_channel_tool,
+            move |args| {
+                let tools_self = tools_self.clone();
+                async move {
+                    tools_self.open_channel(args).await
+                }
+            },
+        );
         
         // Register the send_on_channel tool
-        let send_on_channel_tool = mcp_protocol::types::tool::Tool {
+        let send_on_channel_tool = Tool {
             name: "send_on_channel".to_string(),
             description: Some("Send a message on an open channel".to_string()),
             input_schema: json!({
@@ -194,16 +201,20 @@ impl ChannelTools {
             annotations: None,
         };
         
-        let channel_self = self.clone();
-        register_async_tool(tool_manager, send_on_channel_tool, move |args| {
-            let channel_self = channel_self.clone();
-            async move {
-                channel_self.send_on_channel(args).await
-            }
-        });
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            send_on_channel_tool,
+            move |args| {
+                let tools_self = tools_self.clone();
+                async move {
+                    tools_self.send_on_channel(args).await
+                }
+            },
+        );
         
         // Register the close_channel tool
-        let close_channel_tool = mcp_protocol::types::tool::Tool {
+        let close_channel_tool = Tool {
             name: "close_channel".to_string(),
             description: Some("Close an open channel".to_string()),
             input_schema: json!({
@@ -219,12 +230,16 @@ impl ChannelTools {
             annotations: None,
         };
         
-        let channel_self = self.clone();
-        register_async_tool(tool_manager, close_channel_tool, move |args| {
-            let channel_self = channel_self.clone();
-            async move {
-                channel_self.close_channel(args).await
-            }
-        });
+        let tools_self = self.clone();
+        register_async_tool(
+            tool_manager,
+            close_channel_tool,
+            move |args| {
+                let tools_self = tools_self.clone();
+                async move {
+                    tools_self.close_channel(args).await
+                }
+            },
+        );
     }
 }

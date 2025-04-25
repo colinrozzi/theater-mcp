@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -17,10 +17,6 @@ pub struct ActorTools {
 }
 
 impl ActorTools {
-    pub fn new(theater_client: Arc<TheaterClient>) -> Self {
-        Self {
-            theater_client,
-            resource_manager: None,
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self {
             theater_client,
@@ -48,6 +44,10 @@ impl ActorTools {
             }
         }
     }
+    
+    pub fn with_resources(
+        mut self,
+        resource_manager: Arc<mcp_server::resources::ResourceManager>,
         actor_resources: Arc<crate::resources::ActorResources>,
         event_resources: Arc<crate::resources::EventResources>,
     ) -> Self {
@@ -60,7 +60,7 @@ impl ActorTools {
     pub async fn start_actor(&self, args: Value) -> Result<ToolCallResult> {
         // Extract manifest path
         let manifest = args["manifest"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing manifest parameter"))?;
+            .ok_or_else(|| anyhow!("Missing manifest parameter"))?;
             
         // Extract optional initial state
         let initial_state = if let Some(state) = args.get("initial_state") {
@@ -131,7 +131,7 @@ impl ActorTools {
     pub async fn stop_actor(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
         let actor_id_str = args["actor_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing actor_id parameter"))?;
          
         // Convert to TheaterId
         let theater_id = TheaterId::from_str(actor_id_str)?;
@@ -161,7 +161,7 @@ impl ActorTools {
     pub async fn restart_actor(&self, args: Value) -> Result<ToolCallResult> {
         // Extract actor ID
         let actor_id_str = args["actor_id"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing actor_id parameter"))?;
+            .ok_or_else(|| anyhow!("Missing actor_id parameter"))?;
             
         // Convert to TheaterId
         let theater_id = TheaterId::from_str(actor_id_str)?;
