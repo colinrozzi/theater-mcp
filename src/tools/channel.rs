@@ -3,16 +3,36 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tracing::warn;
 
 use crate::theater::client::TheaterClient;
 
 pub struct ChannelTools {
     theater_client: Arc<TheaterClient>,
 }
-
 impl ChannelTools {
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
+    }
+    
+    /// Helper method to handle Theater connection errors
+    fn handle_connection_error<T>(&self, result: Result<T>, context: &str) -> Result<T> {
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("connect") || error_msg.contains("connection") || 
+                   error_msg.contains("read") || error_msg.contains("write") {
+                    // This is likely a connection issue
+                    warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
+                    Err(anyhow::anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                } else {
+                    // Other type of error
+                    Err(e)
+                }
+            }
+        }
+    }
     }
     
     pub async fn open_channel(&self, args: Value) -> Result<ToolCallResult> {
@@ -32,10 +52,16 @@ impl ChannelTools {
             None
         };
         
-        // Open the channel
+        // Open the channel with connection error handling
         let channel_id = match initial_message {
-            Some(msg) => self.theater_client.open_channel(actor_id, Some(&msg)).await?,
-            None => self.theater_client.open_channel(actor_id, None).await?,
+            Some(msg) => self.handle_connection_error(
+                self.theater_client.open_channel(actor_id, Some(&msg)).await,
+                &format!("channel open to {}", actor_id)
+            )?,
+            None => self.handle_connection_error(
+                self.theater_client.open_channel(actor_id, None).await,
+                &format!("channel open to {}", actor_id)
+            )?,
         };
         
         // Create result
@@ -66,8 +92,11 @@ impl ChannelTools {
         // Decode message data
         let message = BASE64.decode(message_b64)?;
         
-        // Send on the channel
-        self.theater_client.send_on_channel(channel_id, &message).await?;
+        // Send on the channel with connection error handling
+        self.handle_connection_error(
+            self.theater_client.send_on_channel(channel_id, &message).await,
+            &format!("channel send on {}", channel_id)
+        )?;
         
         // Create result
         let response_json = json!({
@@ -90,8 +119,11 @@ impl ChannelTools {
         let channel_id = args["channel_id"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing channel_id parameter"))?;
             
-        // Close the channel
-        self.theater_client.close_channel(channel_id).await?;
+        // Close the channel with connection error handling
+        self.handle_connection_error(
+            self.theater_client.close_channel(channel_id).await,
+            &format!("channel close {}", channel_id)
+        )?;
         
         // Create result
         let response_json = json!({

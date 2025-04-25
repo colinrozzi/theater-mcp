@@ -2,7 +2,7 @@ use anyhow::Result;
 use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 use tokio::runtime::Handle;
 use tokio::task;
 use std::future::Future;
@@ -21,12 +21,34 @@ impl ActorResources {
     /// Create a new actor resources instance
     pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
+    /// Create a new actor resources instance
+    pub fn new(theater_client: Arc<TheaterClient>) -> Self {
+        Self { theater_client }
     }
     
-    /// Get resource content for the actor list
-    pub async fn get_actors_list_content(&self) -> Result<ResourceContent> {
-        debug!("Getting actor list content");
-        let actor_ids = self.theater_client.list_actors().await?;
+    /// Helper method to handle Theater connection errors
+    fn handle_connection_error<T>(&self, result: Result<T>, context: &str) -> Result<T> {
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("connect") || error_msg.contains("connection") || 
+                   error_msg.contains("read") || error_msg.contains("write") {
+                    // This is likely a connection issue
+                    warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
+                    Err(anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                } else {
+                    // Other type of error
+                    Err(e)
+                }
+            }
+        }
+    }
+        // Get actors with connection error handling
+        let actor_ids = self.handle_connection_error(
+            self.theater_client.list_actors().await,
+            "actor list retrieval"
+        )?;
         
         let actors = actor_ids.iter().map(|id| {
             json!({
@@ -57,8 +79,11 @@ impl ActorResources {
         // Convert string ID to TheaterId
         let theater_id = TheaterId::from_str(actor_id)?;
         
-        // Attempt to get the actor state to verify it exists
-        if let Err(e) = self.theater_client.get_actor_state(&theater_id).await {
+        // Attempt to get the actor state to verify it exists with connection error handling
+        if let Err(e) = self.handle_connection_error(
+            self.theater_client.get_actor_state(&theater_id).await,
+            &format!("actor details retrieval for {}", actor_id)
+        ) {
             debug!("Failed to get actor state: {}", e);
             return Err(anyhow::anyhow!("Actor not found: {}", actor_id));
         }
@@ -86,8 +111,11 @@ impl ActorResources {
         // Convert string ID to TheaterId
         let theater_id = TheaterId::from_str(actor_id)?;
         
-        // Get the actor state
-        let state_result = self.theater_client.get_actor_state(&theater_id).await?;
+        // Get the actor state with connection error handling
+        let state_result = self.handle_connection_error(
+            self.theater_client.get_actor_state(&theater_id).await,
+            &format!("actor state retrieval for {}", actor_id)
+        )?;
         
         // Process the state
         let content = if let Some(state_bytes) = state_result {

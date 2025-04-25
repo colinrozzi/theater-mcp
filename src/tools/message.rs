@@ -3,6 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use mcp_protocol::types::tool::{Tool, ToolCallResult, ToolContent};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tracing::warn;
 
 use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
@@ -12,10 +13,27 @@ use crate::tools::utils::register_async_tool;
 pub struct MessageTools {
     theater_client: Arc<TheaterClient>,
 }
-
 impl MessageTools {
-    pub fn new(theater_client: Arc<TheaterClient>) -> Self {
         Self { theater_client }
+    }
+    
+    /// Helper method to handle Theater connection errors
+    fn handle_connection_error<T>(&self, result: Result<T>, context: &str) -> Result<T> {
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("connect") || error_msg.contains("connection") || 
+                   error_msg.contains("read") || error_msg.contains("write") {
+                    // This is likely a connection issue
+                    warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
+                    Err(anyhow::anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                } else {
+                    // Other type of error
+                    Err(e)
+                }
+            }
+        }
     }
     
     pub async fn send_message(&self, args: Value) -> Result<ToolCallResult> {
@@ -33,8 +51,11 @@ impl MessageTools {
         // Decode message data
         let data = BASE64.decode(data_b64)?;
         
-        // Send the message
-        self.theater_client.send_message(&theater_id, &data).await?;
+        // Send the message with connection error handling
+        self.handle_connection_error(
+            self.theater_client.send_message(&theater_id, &data).await,
+            &format!("message send to {}", actor_id_str)
+        )?;
         
         // Create result
         let result_json = json!({
@@ -67,8 +88,11 @@ impl MessageTools {
         // Decode request data
         let data = BASE64.decode(data_b64)?;
         
-        // Send the request and get response
-        let response_data = self.theater_client.request_message(&theater_id, &data).await?;
+        // Send the request and get response with connection error handling
+        let response_data = self.handle_connection_error(
+            self.theater_client.request_message(&theater_id, &data).await,
+            &format!("message request to {}", actor_id_str)
+        )?;
         
         // Encode response data
         let response_b64 = BASE64.encode(&response_data);

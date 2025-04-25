@@ -38,7 +38,7 @@ impl TheaterClient {
             is_connecting: Arc::new(AtomicBool::new(false)),
         })
     }
-    
+
     /// Ensure that we have a valid connection to the Theater server
     async fn ensure_connected(&self) -> Result<()> {
         let mut connection_guard = self.connection.lock().await;
@@ -208,7 +208,7 @@ impl TheaterClient {
         // This should not be reached due to the returns inside the loop
         Err(anyhow!("Failed to send command after maximum attempts"))
     }
-    
+
     /// Start a heartbeat process to periodically check connection
     pub fn start_heartbeat(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let client = Arc::clone(self);

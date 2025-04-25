@@ -2,7 +2,7 @@ use anyhow::Result;
 use mcp_protocol::types::resource::{Resource, ResourceContent, ResourceTemplate};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use theater::id::TheaterId;
 use crate::theater::client::TheaterClient;
@@ -19,6 +19,24 @@ impl EventResources {
         Self { theater_client }
     }
     
+    /// Helper method to handle Theater connection errors
+    fn handle_connection_error<T>(&self, result: Result<T>, context: &str) -> Result<T> {
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("connect") || error_msg.contains("connection") || 
+                   error_msg.contains("read") || error_msg.contains("write") {
+                    // This is likely a connection issue
+                    warn!("Theater connection issue during {}: {}. Will attempt reconnection on next request.", context, error_msg);
+                    Err(anyhow!("Theater server connection issue: {}. The server will attempt to reconnect on the next request.", error_msg))
+                } else {
+                    // Other type of error
+                    Err(e)
+                }
+            }
+        }
+    }
     /// Get resource content for an actor's events
     pub async fn get_actor_events_content(&self, actor_id: &str) -> Result<ResourceContent> {
         debug!("Getting events for actor {}", actor_id);
@@ -26,7 +44,11 @@ impl EventResources {
         // Convert string ID to TheaterId
         let theater_id = TheaterId::from_str(actor_id)?;
         
-        let events = self.theater_client.get_actor_events(&theater_id).await?;
+        // Get actor events with connection error handling
+        let events = self.handle_connection_error(
+            self.theater_client.get_actor_events(&theater_id).await,
+            &format!("actor events retrieval for {}", actor_id)
+        )?;
         
         // Return the events as JSON
         Ok(ResourceContent {
